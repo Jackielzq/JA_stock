@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>策略历史回测报告</title>
+    <style>
+        body { font-family: 'Microsoft YaHei', sans-serif; background-color: #f0f2f5; padding: 20px; color: #333; }
+        .container { max-width: 1380px; margin: 0 auto; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        h1 { text-align: center; color: #2c3e50; }
+        h2 { font-size: 18px; border-left: 4px solid #3498db; padding-left: 10px; margin-bottom: 15px; }
+        
+        /* 表格样式优化 */
+        table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 15px; }
+        th { background: #f8f9fa; padding: 8px 10px; text-align: center; border-bottom: 2px solid #ddd; white-space: nowrap; font-weight: 600; color: #555; }
+        td { padding: 8px 10px; text-align: center; border-bottom: 1px solid #eee; }
+        
+        .win { color: #e74c3c; font-weight: bold; }
+        .loss { color: #27ae60; font-weight: bold; }
+        .gray { color: #999; }
+        
+        .summary-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 15px; }
+        .stat-box { background: #f9f9f9; padding: 15px; border-radius: 6px; text-align: center; border: 1px solid #eee; }
+        .stat-name { font-size: 14px; color: #555; margin-bottom: 5px; font-weight: bold; }
+        .stat-rate { font-size: 24px; font-weight: bold; color: #333; }
+        .stat-detail { font-size: 12px; color: #777; margin-top: 5px; }
+        .stat-returns { font-size: 12px; margin-top: 8px; border-top: 1px dashed #ddd; padding-top: 5px; }
+        
+        /* 矩阵表专用样式 */
+        .matrix-table { table-layout: fixed; }
+        .matrix-table th { background-color: #ecf0f1; font-size: 12px; color: #555; }
+        .matrix-table td { height: 45px; vertical-align: middle; }
+        .col-strategy { width: 180px; font-weight: bold; text-align: left; padding-left: 15px; background: #fcfcfc; border-right: 2px solid #eee; }
+        .cell-win-rate { font-size: 14px; font-weight: bold; display: block; }
+        .cell-count { font-size: 10px; color: #999; display: block; margin-top: 2px; }
+        .no-data { color: #ddd; font-size: 18px; }
+
+        .market-tag { font-size: 11px; color: #fff; padding: 1px 4px; border-radius: 3px; background-color: #95a5a6; }
+        .market-主板 { background-color: #2980b9; }
+        .market-创业板 { background-color: #16a085; }
+        
+
+        /* 策略标签基础样式 */
+        .strat-tag {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+            color: #fff;
+            margin-right: 4px;
+            margin-bottom: 2px;
+            font-weight: normal;
+        }
+        /* 各策略专属颜色 */
+        .tag-s1 { background-color: #e74c3c; } /* 红色 - 激进/突破 */
+        .tag-s2 { background-color: #3498db; } /* 蓝色 - 稳健/反包 */
+        .tag-s3 { background-color: #9b59b6; } /* 紫色 - 潜伏/控盘 */
+        .tag-s4 { background-color: #f39c12; } /* 橙色 - 空中加油 */
+        .tag-s5 { background-color: #1abc9c; } /* 青色 - 放量新高 */
+
+
+        .strategy-title { 
+            font-size: 16px; font-weight: bold; color: #2c3e50; 
+            border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 15px;
+            margin-top: 10px;
+        }
+        .total-win-rate { color: #e74c3c; font-weight: bold; font-size: 16px; margin-left: 5px; }
+        .strategy-stats { font-size: 13px; font-weight: normal; color: #666; float: right; }
+        
+        /* 日期头样式 */
+        .date-header {
+            background-color: #eaf2f8;
+            padding: 8px 15px;
+            border-left: 4px solid #3498db;
+            margin-top: 20px;
+            margin-bottom: 0; /* 紧贴表格 */
+            font-weight: bold;
+            color: #2c3e50;
+            border-top-left-radius: 4px;
+            border-top-right-radius: 4px;
+        }
+        .date-win-rate {
+            float: right;
+            font-size: 13px;
+            color: #d35400;
+        }
+        /* 去掉每个日期表格的上边距，使其紧贴Header */
+        .date-table { margin-top: 0; border-top: none; }
+
+        /* 新增：日期分隔线样式 */
+        tr.date-separator td {
+            border-top: 3px solid #3498db; /* 蓝色粗线 */
+            background-color: #eaf6ff;     /* 浅蓝色背景高亮该行，强调新的一天 */
+        }
+        
+        /* 徽章样式优化 */
+        .count-badge-table {
+            background-color: #95a5a6;
+            color: white;
+            border-radius: 10px;
+            padding: 2px 6px;
+            font-size: 11px;
+        }
+        .count-high { background-color: #e67e22; } /* 次数多显示橙色 */
+
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 策略历史回测报告 (合并视角)</h1>
+        
+        <!-- 1. 全策略历史汇总 -->
+        <div class="card">
+            <h2>全策略历史总表现 (胜率统计)</h2>
+            <div class="summary-grid">
+                {% for stat in summary %}
+                <div class="stat-box">
+                    <div class="stat-name">{{ stat.name }}</div>
+                    <div class="stat-rate" style="color: {{ '#e74c3c' if stat.win_rate_val > 50 else ('#27ae60' if stat.count > 0 else '#999') }}">
+                        {{ stat.win_rate_str }}
+                    </div>
+                    <div class="stat-detail">
+                        胜/总: {{ stat.wins }}/{{ stat.count }}
+                    </div>
+                    <div class="stat-returns">
+                        次日均: <span class="{{ 'win' if stat.avg_1d > 0 else 'loss' }}">{{ stat.avg_1d }}%</span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- 2. 近5日趋势矩阵 -->
+        <div class="card">
+            <h2>🔥 各策略胜率趋势 (近5日)</h2>
+            <table class="matrix-table">
+                <thead>
+                    <tr>
+                        <th class="col-strategy">策略 \ 日期</th>
+                        {% for d in trend_dates %}
+                        <th>{{ d[4:6] }}-{{ d[6:] }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in matrix_data %}
+                    <tr>
+                        <td class="col-strategy">{{ row.name }}</td>
+                        {% for item in row.cells %}
+                        <td>
+                            {% if item.has_data %}
+                                <span class="cell-win-rate {{ 'win' if item.val > 50 else 'loss' }}">{{ item.str }}</span>
+                                <span class="cell-count">({{ item.wins }}/{{ item.total }})</span>
+                            {% else %}
+                                <span class="no-data">-</span>
+                            {% endif %}
+                        </td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- 3. 个股入选明细 (不去重 + 近10日) -->
+        <div class="card">
+            <div class="strategy-title">
+                🏆 历史入选个股追踪 (仅显示最近 10 个交易日)
+                <div class="strategy-stats">
+                    当前列表包含 {{ consolidated_list|length }} 条入选记录
+                </div>
+            </div>
+
+            <table class="date-table">
+                <thead>
+                    <tr>
+                        <th width="8%">代码</th>
+                        <th width="8%">名称</th>
+                        <th width="10%">入选日期</th>
+                        <th width="6%">市场</th>
+                        <th width="8%">板块</th>
+                        <th width="12%">入选策略</th>
+                        <th width="5%">累计次数</th> <!-- 新增 -->
+                        <th width="6%">评分</th>
+                        <th width="8%">市值</th>
+                        <th width="6%">入选价</th>
+                        <th width="6%">最新价</th>
+                        <th width="7%">次日涨幅</th>
+                        <th width="6%">5日涨幅</th>
+                        <th width="6%">10日涨幅</th>
+                        <th width="5%">胜负</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in consolidated_list %}
+                    <!-- 判断日期是否发生变化，如果是，添加 date-separator 类 -->
+                    <tr class="{{ 'date-separator' if not loop.first and row.first_date != loop.previtem.first_date else '' }}">
+                        <td>{{ row.ts_code }}</td>
+                        <td style="font-weight:bold;">{{ row.stock_name }}</td>
+                        <td style="font-weight:bold; color:#2980b9;">{{ row.first_date }}</td>
+                        <td><span class="market-tag market-{{ row.market }}">{{ row.market }}</span></td>
+                        <td>{{ row.industry }}</td>
+                        <!-- 入选策略列 (彩色标签版) -->
+                        <td style="text-align: center;">
+                            {% for strat in row.strategies_list %}
+                                <!-- 提取策略编号生成 class (例如 '策略1' -> 'tag-s1') -->
+                                <!-- 假设策略名最后一位是数字 -->
+                                <span class="strat-tag tag-s{{ strat[-1] }}">{{ strat }}</span>
+                            {% endfor %}
+                        </td>
+                        
+                        <!-- 入选次数 -->
+                        <td>
+                            <span class="count-badge-table {{ 'count-high' if row.selection_count > 1 else '' }}">
+                                {{ row.selection_count }}
+                            </span>
+                        </td>
+                        
+                        <td><b>{{ row.total_score }}</b></td>
+                        <td>{{ row.total_mv }}亿</td>
+                        <td>{{ row.initial_price }}</td>
+                        <td style="font-weight:bold;">{{ row.latest_price }}</td>
+                        
+                        <!-- 涨幅数据 -->
+                        <td class="{{ row.style_1d }}">{{ row.ret_1d }}</td>
+                        <td class="{{ 'win' if '-' not in row.ret_5d and row.ret_5d|replace('%','')|float > 0 else '' }}">{{ row.ret_5d }}</td>
+                        <td class="{{ 'win' if '-' not in row.ret_10d and row.ret_10d|replace('%','')|float > 0 else '' }}">{{ row.ret_10d }}</td>
+                        
+                        <td>
+                            {% if row.is_win %} <span class="win">胜</span>
+                            {% else %} <span class="loss">负</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        
+        <div style="text-align:center; font-size:12px; color:#999; margin-top:20px;">Generated at {{ generate_time }}</div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,217 @@
+<svg width="1600" height="980" viewBox="0 0 1600 980" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1600" y2="980" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8FAFC"/>
+      <stop offset="1" stop-color="#EEF2F7"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#F7FAFC"/>
+    </linearGradient>
+    <linearGradient id="header" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#123B5D"/>
+      <stop offset="1" stop-color="#1D5E7A"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#1F8A70"/>
+      <stop offset="1" stop-color="#2FA4A4"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="18" flood-color="#0F172A" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#4B6B88"/>
+    </marker>
+    <style>
+      .title { font: 700 34px "Microsoft YaHei", "PingFang SC", sans-serif; fill: #F8FAFC; }
+      .subtitle { font: 500 16px "Microsoft YaHei", "PingFang SC", sans-serif; fill: #D5E3EE; }
+      .panel-title { font: 700 24px "Microsoft YaHei", "PingFang SC", sans-serif; fill: #16324F; }
+      .panel-note { font: 500 14px "Microsoft YaHei", "PingFang SC", sans-serif; fill: #5E748A; }
+      .section { font: 700 18px "Microsoft YaHei", "PingFang SC", sans-serif; fill: #17324D; }
+      .folder { font: 700 16px "Consolas", "Microsoft YaHei", monospace; fill: #124A67; }
+      .file { font: 500 14px "Consolas", "Microsoft YaHei", monospace; fill: #334155; }
+      .desc { font: 500 13px "Microsoft YaHei", "PingFang SC", sans-serif; fill: #60758A; }
+      .flow-title { font: 700 15px "Microsoft YaHei", "PingFang SC", sans-serif; fill: #16324F; }
+      .flow-text { font: 500 13px "Microsoft YaHei", "PingFang SC", sans-serif; fill: #5C7187; }
+      .small { font: 600 12px "Consolas", "Microsoft YaHei", monospace; fill: #36516B; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="980" fill="url(#bg)"/>
+  <path d="M0 140C240 80 380 70 580 110C760 145 910 210 1120 180C1290 155 1440 88 1600 56V0H0V140Z" fill="#DDE8F1"/>
+  <path d="M0 170C220 128 430 118 620 152C790 182 980 252 1220 222C1380 202 1495 144 1600 112V0H0V170Z" fill="#E7EFF5"/>
+
+  <rect x="60" y="42" width="1480" height="110" rx="28" fill="url(#header)" filter="url(#shadow)"/>
+  <text x="108" y="92" class="title">A股量化分析系统结构图</text>
+  <text x="108" y="123" class="subtitle">左侧展示目录结构，右侧展示主流程与模块调用关系</text>
+
+  <rect x="60" y="182" width="690" height="738" rx="28" fill="url(#panel)" stroke="#D6E2EC" filter="url(#shadow)"/>
+  <rect x="790" y="182" width="750" height="738" rx="28" fill="url(#panel)" stroke="#D6E2EC" filter="url(#shadow)"/>
+
+  <text x="100" y="230" class="panel-title">目录结构</text>
+  <text x="100" y="255" class="panel-note">项目源码、配置、模板、输入资源与运行产物</text>
+
+  <text x="830" y="230" class="panel-title">调用关系</text>
+  <text x="830" y="255" class="panel-note">从入口调度，到数据更新、计算、渲染、输出与发布</text>
+
+  <rect x="100" y="288" width="610" height="592" rx="22" fill="#FBFDFF" stroke="#E3ECF3"/>
+  <line x1="140" y1="338" x2="140" y2="826" stroke="#C7D5E3" stroke-width="2"/>
+  <line x1="170" y1="388" x2="170" y2="826" stroke="#D8E2EC" stroke-width="2"/>
+  <line x1="200" y1="514" x2="200" y2="826" stroke="#E1E8F0" stroke-width="2"/>
+  <line x1="200" y1="626" x2="200" y2="826" stroke="#E1E8F0" stroke-width="2"/>
+  <line x1="200" y1="724" x2="200" y2="826" stroke="#E1E8F0" stroke-width="2"/>
+
+  <circle cx="140" cy="338" r="6" fill="#1F8A70"/>
+  <text x="160" y="344" class="folder">Stock_data-V8/</text>
+  <text x="360" y="344" class="desc">项目根目录</text>
+
+  <circle cx="170" cy="388" r="5" fill="#D4A937"/>
+  <text x="190" y="393" class="file">main.py</text>
+  <text x="305" y="393" class="desc">统一入口，按 --mode 调度</text>
+
+  <circle cx="170" cy="426" r="5" fill="#D4A937"/>
+  <text x="190" y="431" class="file">config.py</text>
+  <text x="305" y="431" class="desc">数据库、Tushare、邮件、LLM、输出目录配置</text>
+
+  <circle cx="170" cy="464" r="5" fill="#D4A937"/>
+  <text x="190" y="469" class="file">Readme.md / README2.md / 文件结构.md / 策略说明.md</text>
+
+  <circle cx="170" cy="514" r="5" fill="#1F8A70"/>
+  <text x="190" y="519" class="folder">core/</text>
+  <text x="255" y="519" class="desc">核心业务层</text>
+  <circle cx="200" cy="552" r="4.5" fill="#7AA6C2"/>
+  <text x="220" y="557" class="file">db_engine.py</text>
+  <text x="350" y="557" class="desc">数据库连接 + Tushare API</text>
+  <circle cx="200" cy="584" r="4.5" fill="#7AA6C2"/>
+  <text x="220" y="589" class="file">data_updater.py</text>
+  <text x="385" y="589" class="desc">初始化、增量更新、建表、指标计算</text>
+  <circle cx="200" cy="616" r="4.5" fill="#7AA6C2"/>
+  <text x="220" y="621" class="file">factor_calculator.py</text>
+  <text x="413" y="621" class="desc">情绪、板块、概念、因子评分</text>
+  <circle cx="200" cy="648" r="4.5" fill="#7AA6C2"/>
+  <text x="220" y="653" class="file">strategies.py</text>
+  <text x="355" y="653" class="desc">选股策略、结果增强、回测</text>
+  <circle cx="200" cy="680" r="4.5" fill="#7AA6C2"/>
+  <text x="220" y="685" class="file">monitor_manager.py</text>
+  <text x="404" y="685" class="desc">监控池 Excel 同步与数据聚合</text>
+
+  <circle cx="170" cy="724" r="5" fill="#1F8A70"/>
+  <text x="190" y="729" class="folder">services/</text>
+  <text x="285" y="729" class="desc">外部服务层</text>
+  <circle cx="200" cy="762" r="4.5" fill="#7AA6C2"/>
+  <text x="220" y="767" class="file">news_service.py / mail_service.py / pdf_service.py</text>
+  <circle cx="200" cy="794" r="4.5" fill="#7AA6C2"/>
+  <text x="220" y="799" class="file">github_service.py / deploy_hexo.py / get_hot_news.py</text>
+
+  <circle cx="170" cy="826" r="5" fill="#1F8A70"/>
+  <text x="190" y="831" class="folder">report/</text>
+  <text x="285" y="831" class="desc">表现层</text>
+  <circle cx="200" cy="858" r="4.5" fill="#7AA6C2"/>
+  <text x="220" y="863" class="file">renderer.py + templates/</text>
+  <text x="445" y="863" class="desc">daily_review / daily_news / stock_selection / back_test / monitor</text>
+
+  <rect x="100" y="892" width="610" height="0" rx="0" fill="none"/>
+
+  <rect x="830" y="286" width="170" height="72" rx="18" fill="#153B5D"/>
+  <text x="865" y="315" class="flow-title" fill="#F8FAFC" style="fill:#F8FAFC;">main.py</text>
+  <text x="854" y="337" class="flow-text" fill="#D7E4EE" style="fill:#D7E4EE;">统一入口 / 模式调度</text>
+
+  <rect x="1055" y="286" width="170" height="72" rx="18" fill="#F7FBFE" stroke="#CFE0EC"/>
+  <text x="1098" y="315" class="flow-title">config.py</text>
+  <text x="1074" y="337" class="flow-text">全局配置中心</text>
+
+  <path d="M1000 322H1055" stroke="#4B6B88" stroke-width="3" marker-end="url(#arrow)"/>
+
+  <rect x="844" y="406" width="152" height="82" rx="18" fill="#FFFFFF" stroke="#CFE0EC"/>
+  <text x="874" y="436" class="flow-title">DBEngine</text>
+  <text x="865" y="458" class="flow-text">MySQL 连接</text>
+  <text x="865" y="477" class="flow-text">Tushare 初始化</text>
+
+  <rect x="1036" y="406" width="152" height="82" rx="18" fill="#FFFFFF" stroke="#CFE0EC"/>
+  <text x="1052" y="436" class="flow-title">StockDataUpdater</text>
+  <text x="1054" y="458" class="flow-text">init / update / fix</text>
+  <text x="1065" y="477" class="flow-text">concept 更新</text>
+
+  <rect x="1228" y="406" width="152" height="82" rx="18" fill="#FFFFFF" stroke="#CFE0EC"/>
+  <text x="1246" y="436" class="flow-title">FactorCalculator</text>
+  <text x="1250" y="458" class="flow-text">情绪 / 行业 / 概念</text>
+  <text x="1264" y="477" class="flow-text">总分回写</text>
+
+  <rect x="1420" y="406" width="100" height="82" rx="18" fill="#FFFFFF" stroke="#CFE0EC"/>
+  <text x="1436" y="436" class="flow-title">MySQL</text>
+  <text x="1439" y="458" class="flow-text">daily_data</text>
+  <text x="1442" y="477" class="flow-text">多张业务表</text>
+
+  <rect x="1420" y="522" width="100" height="82" rx="18" fill="#F0FBF8" stroke="#BFE5DA"/>
+  <text x="1432" y="552" class="flow-title">Tushare</text>
+  <text x="1442" y="574" class="flow-text">行情数据</text>
+
+  <path d="M920 358V406" stroke="#4B6B88" stroke-width="3" marker-end="url(#arrow)"/>
+  <path d="M920 322C920 380 1112 360 1112 406" stroke="#4B6B88" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+  <path d="M920 322C920 390 1304 360 1304 406" stroke="#4B6B88" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+
+  <path d="M996 447H1036" stroke="#4B6B88" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <path d="M1188 447H1228" stroke="#4B6B88" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <path d="M1380 447H1420" stroke="#4B6B88" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <path d="M920 488V638" stroke="#4B6B88" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <path d="M1470 488V522" stroke="#4B6B88" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <rect x="844" y="638" width="168" height="86" rx="18" fill="#FFFFFF" stroke="#CFE0EC"/>
+  <text x="866" y="668" class="flow-title">StrategyEngine</text>
+  <text x="866" y="690" class="flow-text">run_selection</text>
+  <text x="866" y="709" class="flow-text">run_backtest</text>
+
+  <rect x="1050" y="638" width="168" height="86" rx="18" fill="#FFFFFF" stroke="#CFE0EC"/>
+  <text x="1066" y="668" class="flow-title">MonitorPoolManager</text>
+  <text x="1085" y="690" class="flow-text">sync_from_excel</text>
+  <text x="1072" y="709" class="flow-text">get_monitor_data</text>
+
+  <rect x="1256" y="638" width="168" height="86" rx="18" fill="#FFFFFF" stroke="#CFE0EC"/>
+  <text x="1290" y="668" class="flow-title">NewsManager</text>
+  <text x="1293" y="690" class="flow-text">抓取财联社</text>
+  <text x="1278" y="709" class="flow-text">LLM 筛选新闻</text>
+
+  <rect x="1460" y="638" width="60" height="86" rx="18" fill="#F0FBF8" stroke="#BFE5DA"/>
+  <text x="1469" y="671" class="small">LLM</text>
+  <text x="1465" y="692" class="small">API</text>
+
+  <path d="M1012 681H1050" stroke="#4B6B88" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <path d="M1218 681H1256" stroke="#4B6B88" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <path d="M1424 681H1460" stroke="#4B6B88" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <path d="M1112 488V638" stroke="#4B6B88" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <path d="M1304 488V638" stroke="#4B6B88" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <rect x="920" y="780" width="188" height="92" rx="20" fill="url(#accent)"/>
+  <text x="950" y="813" class="flow-title" fill="#F8FAFC" style="fill:#F8FAFC;">ReportRenderer</text>
+  <text x="943" y="836" class="flow-text" fill="#E7FCF9" style="fill:#E7FCF9;">Jinja2 渲染 HTML 报告</text>
+  <text x="940" y="855" class="flow-text" fill="#E7FCF9" style="fill:#E7FCF9;">daily_review / news / monitor</text>
+
+  <rect x="1140" y="780" width="158" height="92" rx="20" fill="#FFFFFF" stroke="#CFE0EC"/>
+  <text x="1178" y="813" class="flow-title">templates</text>
+  <text x="1158" y="836" class="flow-text">HTML 模板集合</text>
+  <text x="1162" y="855" class="flow-text">5 类报告页面</text>
+
+  <rect x="1330" y="780" width="190" height="92" rx="20" fill="#FFFFFF" stroke="#CFE0EC"/>
+  <text x="1368" y="813" class="flow-title">HTML / PDF 报告</text>
+  <text x="1364" y="836" class="flow-text">output/daily_review</text>
+  <text x="1360" y="855" class="flow-text">news / selection / monitor</text>
+
+  <path d="M928 724V780" stroke="#4B6B88" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <path d="M1134 724C1134 760 1030 748 1030 780" stroke="#4B6B88" stroke-width="2.5" fill="none" marker-end="url(#arrow)"/>
+  <path d="M1340 724C1340 760 1030 748 1030 780" stroke="#4B6B88" stroke-width="2.5" fill="none" marker-end="url(#arrow)"/>
+  <path d="M1108 826H1140" stroke="#4B6B88" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <path d="M1298 826H1330" stroke="#4B6B88" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <rect x="1110" y="898" width="108" height="38" rx="14" fill="#153B5D"/>
+  <rect x="1240" y="898" width="108" height="38" rx="14" fill="#1D5E7A"/>
+  <rect x="1370" y="898" width="108" height="38" rx="14" fill="#1F8A70"/>
+  <text x="1146" y="922" class="flow-title" fill="#F8FAFC" style="fill:#F8FAFC;">GitHub</text>
+  <text x="1278" y="922" class="flow-title" fill="#F8FAFC" style="fill:#F8FAFC;">Hexo</text>
+  <text x="1408" y="922" class="flow-title" fill="#F8FAFC" style="fill:#F8FAFC;">Email</text>
+  <path d="M1425 872V898" stroke="#4B6B88" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <path d="M1425 872C1425 888 1294 886 1294 898" stroke="#4B6B88" stroke-width="2.5" fill="none" marker-end="url(#arrow)"/>
+  <path d="M1425 872C1425 888 1164 886 1164 898" stroke="#4B6B88" stroke-width="2.5" fill="none" marker-end="url(#arrow)"/>
+
+  <rect x="100" y="840" width="580" height="26" rx="13" fill="#EEF6FB"/>
+  <text x="120" y="858" class="desc">utils/ 下还有 market_utils.py 与 monitor_pool.xlsx；output/ 下存放 daily_review、daily_news、monitor、stock_selection、backtest_report 等结果。</text>
+</svg>

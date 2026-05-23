@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>量化选股策略日报 - {{ date }}</title>
+    <style>
+        body { font-family: 'Microsoft YaHei', sans-serif; background-color: #f5f7fa; padding: 20px; color: #333; }
+        .container { max-width: 1400px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 15px; }
+        .info { font-size: 12px; color: #666; margin-bottom: 20px; text-align: right; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; table-layout: fixed; }
+        th { background-color: #f8f9fa; padding: 10px; text-align: center; border-bottom: 2px solid #ddd; font-weight: bold; color: #555; white-space: nowrap; }
+        td { padding: 8px 5px; text-align: center; border-bottom: 1px solid #eee; word-wrap: break-word; }
+        tr:hover { background-color: #f0faff; }
+        
+        /* 列宽 */
+        .col-code { width: 65px; }
+        .col-name { width: 75px; }
+        .col-market { width: 45px; }
+        .col-ind { width: 110px; } 
+        .col-concept { width: 220px; text-align: left; font-size: 12px; }
+        .col-price { width: 55px; }
+        .col-pct { width: 65px; }
+        .col-hist-date { width: 90px; }
+        .col-hist-count { width: 60px; }
+        .col-score { width: 50px; }
+
+        .up { color: #e74c3c; font-weight: bold; }
+        .down { color: #27ae60; font-weight: bold; }
+        
+        /* === 优化1：行业与概念样式 (白底红框) === */
+        .concept-item { 
+            display: inline-block; 
+            margin-right: 4px; 
+            padding: 1px 6px; 
+            border-radius: 4px; 
+            margin-bottom: 3px; 
+            font-size: 12px;
+            background-color: #ffffff; /* 统一白底 */
+        }
+        
+        /* 强力上涨 (>1%)：深红框，文字粗体 */
+        .trend-deep-red { 
+            color: #c0392b; 
+            border: 1px solid #c0392b; 
+            font-weight: 900; /* 特粗 */
+        }
+        
+        /* 温和上涨 (0-1%)：浅红框，文字正常 */
+        .trend-light-red { 
+            color: #e74c3c; 
+            border: 1px solid #fab1a0; 
+            font-weight: normal;
+        }
+        
+        /* 下跌：绿框 */
+        .trend-green { 
+            color: #27ae60; 
+            border: 1px solid #b2f2bb; 
+            font-weight: normal;
+        }
+
+        /* === 优化2：次数高亮 (Highlight) === */
+        .hist-date { 
+            color: #666; 
+            font-family: 'Consolas', monospace; 
+        }
+
+        .hist-count {
+            display: inline-block;
+            min-width: 20px;
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-weight: bold;
+            color: #7f8c8d;
+        }
+
+        /* 高频入选：黄色背景高亮，非常吸引眼球 */
+        .count-hot {
+            background-color: #f1c40f; /* 亮黄色 */
+            color: #2c3e50;           /* 深色字 */
+            box-shadow: 0 0 5px rgba(241, 196, 15, 0.5);
+            border: 1px solid #d4ac0d;
+        }
+        
+        /* 极高频 (例如5次以上)：橙色背景 */
+        .count-super-hot {
+            background-color: #e67e22;
+            color: #fff;
+            border: 1px solid #d35400;
+        }
+
+        .score-box { font-weight: bold; font-size: 15px; color: #d35400; }
+        .market-tag { font-size: 10px; color: #fff; padding: 2px 4px; border-radius: 3px; background-color: #95a5a6; }
+        .market-主板 { background-color: #2980b9; }
+        .market-创业板 { background-color: #16a085; }
+        .strategy-header { font-size: 18px; font-weight: bold; margin-bottom: 10px; padding-left: 10px; border-left: 5px solid #3498db; }
+        .count-badge { background: #e74c3c; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📈 量化选股策略日报 ({{ total_count }}支)</h1>
+        <div class="info">生成时间: {{ generate_time }} | 交易日: {{ trade_date }}</div>
+        {% for strat_name, stock_list in grouped_stocks.items() %}
+        <div class="strategy-section">
+            <div class="strategy-header">
+                {{ strat_name }}
+                <span class="count-badge">{{ stock_list|length }}</span>
+            </div>
+            {% if stock_list %}
+            <table>
+                <thead>
+                    <tr>
+                        <th class="col-code">代码</th>
+                        <th class="col-name">名称</th>
+                        <th class="col-market">市场</th>
+                        <th class="col-ind">行业(涨幅)</th>
+                        <th class="col-concept">概念</th>
+                        <th class="col-price">现价</th>
+                        <th class="col-pct">涨幅</th>
+                        <th class="col-hist-date">最早入选</th>
+                        <th class="col-hist-count">总次数</th>
+                        <th class="col-score">评分</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for stock in stock_list %}
+                    <tr>
+                        <td>{{ stock.ts_code }}</td>
+                        <td>{{ stock.stock_name }}</td>
+                        <td><span class="market-tag market-{{ stock.market }}">{{ stock.market }}</span></td>
+                        <td>{{ stock.industry_html|safe }}</td>
+                        <td class="col-concept">{{ stock.concepts_str|safe }}</td>
+                        <td>{{ stock.close }}</td>
+                        <td class="{{ 'up' if stock.pct_chg > 0 else 'down' }}">{{ stock.pct_chg }}%</td>
+                        
+                        <!-- 日期列：透明底 -->
+                        <td><span class="hist-date">{{ stock.first_date }}</span></td>
+                        
+                        <!-- 次数列：高亮逻辑 -->
+                        <td>
+                            <span class="hist-count 
+                                {{ 'count-super-hot' if stock.selection_count >= 5 
+                                   else ('count-hot' if stock.selection_count >= 2 else '') }}">
+                                {{ stock.selection_count }}
+                            </span>
+                        </td>
+                        
+                        <td><span class="score-box">{{ stock.total_score }}</span></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</body>
+</html>

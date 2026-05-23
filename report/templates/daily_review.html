@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>A股每日复盘 - {{ date }}</title>
+    <style>
+        body { font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        
+        .main-header { 
+            background: #ffffff; color: #2c3e50; padding: 20px; border-radius: 8px; 
+            margin-bottom: 20px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            border-bottom: 4px solid #34495e; 
+        }
+        .main-header h1 { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: 1px; }
+        .main-header .sub-info { font-size: 12px; color: #7f8c8d; margin-top: 5px; }
+
+        .dashboard-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 15px; margin-bottom: 20px; }
+        .dash-card { 
+            background: white; border-radius: 8px; padding: 15px 0; 
+            box-shadow: 0 2px 6px rgba(0,0,0,0.05); 
+            display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+            height: 120px; 
+        }
+        .dash-label { font-size: 13px; color: #7f8c8d; font-weight: 500; margin-bottom: 5px; }
+        .dash-val { 
+            font-size: 32px; font-weight: 800; color: #2c3e50; 
+            height: 40px; line-height: 40px; 
+            display: flex; align-items: center; justify-content: center;
+        }
+        .score-val { color: #f39c12; font-size: 42px; }
+        .dash-sub { 
+            font-size: 12px; color: #95a5a6; margin-top: 5px; 
+            display: flex; align-items: center; justify-content: center; gap: 5px;
+        }
+
+        .progress-box { width: 80%; margin-top: 5px; }
+        .bar-track { width: 100%; height: 6px; background: #ecf0f1; border-radius: 3px; overflow: hidden; display: flex; margin-bottom: 4px; }
+        .dist-labels { display: flex; justify-content: space-between; font-size: 12px; color: #666; font-weight: 500; line-height: 1; }
+
+        /* 核心卡片样式，所有模块统一使用此结构 */
+        .card { background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        .card-header { font-size: 16px; font-weight: 700; border-left: 4px solid #3498db; padding-left: 10px; margin-bottom: 15px; }
+        
+        .card-header.red-border { border-left-color: #e74c3c; }
+        .card-header.green-border { border-left-color: #27ae60; }
+        .card-header.purple-border { border-left-color: #8e44ad; }
+        
+        table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed;}
+        th { background: #f8f9fa; padding: 10px; text-align: center; color: #666; font-weight: 600; border-bottom: 2px solid #e9ecef; white-space: nowrap; }
+        td { padding: 8px; text-align: center; border-bottom: 1px solid #f1f1f1; vertical-align: middle; word-wrap: break-word;}
+        tr:hover { background: #fcfcfc; }
+        
+        .up { color: #e74c3c; font-weight: bold; }
+        .down { color: #27ae60; font-weight: bold; }
+        .flat { color: #95a5a6; }
+        .bg-red { background-color: #e74c3c; }
+        .bg-green { background-color: #27ae60; }
+        
+        .market-tag { font-size: 12px; color: #fff; padding: 2px 6px; border-radius: 4px; background-color: #95a5a6; }
+        .market-主板 { background-color: #2980b9; }
+        .market-创业板 { background-color: #16a085; }
+        
+        .badge { padding: 2px 6px; border-radius: 4px; font-size: 12px; color: white; display: inline-block; min-width: 30px; }
+        .badge-red { background: #e74c3c; }
+        
+        .trend-table th { background-color: #ecf0f1; }
+        .trend-score { font-weight: bold; font-size: 16px; }
+        .high-score { color: #e74c3c; }
+        .low-score { color: #27ae60; }
+        .sub-text { font-size: 10px; color: #999; font-weight: normal; display: block;}
+
+        .row-flex { display: flex; gap: 20px; }
+        .col-half { flex: 1; }
+        .stock-name { font-weight: bold; color: #333; }
+
+        /* === 涨跌停家数突出与统一颜色样式 === */
+        .limit-up-normal { color: #e74c3c; font-weight: bold; }
+        .limit-down-normal { color: #27ae60; font-weight: bold; }
+        .limit-max-up {
+            font-size: 14px; font-weight: 900; color: #c0392b; 
+            background-color: #fadbd8; border: 1px solid #f5b7b1; 
+            border-radius: 4px; padding: 2px 8px; display: inline-block;
+            box-shadow: 0 1px 3px rgba(231, 76, 60, 0.2);
+        }
+        .limit-max-down {
+            font-size: 14px; font-weight: 900; color: #1e8449; 
+            background-color: #d4efdf; border: 1px solid #a9dfbf; 
+            border-radius: 4px; padding: 2px 8px; display: inline-block;
+            box-shadow: 0 1px 3px rgba(39, 174, 96, 0.2);
+        }
+
+        /* === 选股模块专属 CSS === */
+        .col-code { width: 65px; }
+        .col-name { width: 75px; }
+        .col-market { width: 45px; }
+        .col-ind { width: 110px; } 
+        .col-concept { width: 220px; text-align: left; font-size: 12px; }
+        .col-price { width: 55px; }
+        .col-pct { width: 65px; }
+        .col-hist-date { width: 90px; }
+        .col-hist-count { width: 60px; }
+        .col-score { width: 50px; }
+
+        .concept-item { 
+            display: inline-block; margin-right: 4px; padding: 1px 6px; border-radius: 4px; margin-bottom: 3px; font-size: 12px; background-color: #ffffff; 
+        }
+        .trend-deep-red { color: #c0392b; border: 1px solid #c0392b; font-weight: 900; }
+        .trend-light-red { color: #e74c3c; border: 1px solid #fab1a0; font-weight: normal; }
+        .trend-green { color: #27ae60; border: 1px solid #b2f2bb; font-weight: normal; }
+
+        .hist-date { color: #666; font-family: 'Consolas', monospace; }
+        .hist-count { display: inline-block; min-width: 20px; padding: 2px 6px; border-radius: 10px; font-weight: bold; color: #7f8c8d; }
+        .count-hot { background-color: #f1c40f; color: #2c3e50; box-shadow: 0 0 5px rgba(241, 196, 15, 0.5); border: 1px solid #d4ac0d; }
+        .count-super-hot { background-color: #e67e22; color: #fff; border: 1px solid #d35400; }
+
+        .score-box { font-weight: bold; font-size: 15px; color: #d35400; }
+        .strategy-header { font-size: 15px; font-weight: bold; margin: 15px 0 10px 0; padding-left: 8px; border-left: 4px solid #f39c12; color: #34495e; background: #fafafa; padding: 8px; border-radius: 0 4px 4px 0;}
+        .count-badge { background: #e74c3c; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; margin-left: 5px;}
+        
+        /* === 底部二维码模块专属 CSS === */
+        .footer-qrcode {
+            text-align: center;
+            margin-top: 40px;
+            margin-bottom: 15px;
+        }
+        .footer-qrcode img {
+            width: 130px;
+            height: 130px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            border: 1px solid #ecf0f1;
+            padding: 5px;
+            background-color: white;
+        }
+        .footer-qrcode p {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #7f8c8d;
+            font-weight: 600;
+            letter-spacing: 1px;
+        }
+
+    </style>
+
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+
+</head>
+<body>
+    <div class="container">
+        <div class="main-header">
+            <h1>A股每日复盘报告</h1>
+            <div class="sub-info">日期: {{ date }} &nbsp;|&nbsp; 报告创建时间: {{ generate_time }}</div>
+        </div>
+        
+
+        <!-- 1. 核心指标仪表盘 -->
+        <div class="dashboard-grid">
+            <div class="dash-card"><div class="dash-label">市场情绪综合分</div><div class="dash-val score-val">{{ latest.score }}</div><div class="dash-sub">满分 100</div></div>
+            <div class="dash-card"><div class="dash-label">上证指数</div><div class="dash-val {{ 'up' if latest.sh_pct > 0 else 'down' }}">{{ "%.2f"|format(latest.sh_close) }}</div><div class="dash-sub"><span class="{{ 'up' if latest.sh_pct > 0 else 'down' }}">{{ "%+.2f"|format(latest.sh_pct) }}%</span></div></div>
+            <div class="dash-card"><div class="dash-label">两市总成交</div><div class="dash-val">{{ "%.0f"|format(latest.amount) }}亿</div><div class="dash-sub"><span class="{{ 'up' if latest.vol_pct > 0 else 'down' }}">{{ '放量' if latest.vol_pct > 0 else '缩量' }} {{ "%.1f"|format(latest.vol_pct|abs) }}%</span></div></div>
+            <div class="dash-card">
+                <div class="dash-label">涨跌比 ({{ latest.ad_ratio }})</div>
+                <div class="dash-val"><span class="up">{{ "{:,}".format(latest.up_count) }}</span><span style="font-size:20px; color:#ddd; margin:0 5px;">/</span><span class="down">{{ "{:,}".format(latest.down_count) }}</span></div>
+                <div class="progress-box"><div class="bar-track"><div class="bg-red" style="flex: {{ latest.up_count }}"></div><div class="bg-green" style="flex: {{ latest.down_count }}"></div></div></div>
+            </div>
+            <div class="dash-card">
+                <div class="dash-label">连板高度 / 晋级率</div>
+                <div class="dash-val"><span class="up">{{ latest.height }}板</span><span style="font-size:20px; color:#ddd; margin:0 5px;">|</span><span class="up">{{ "%.0f"|format(latest.promo_rate) }}%</span></div>
+                <div class="progress-box"><div class="bar-track"><div class="bg-red" style="flex: {{ latest.limit_up }}"></div><div class="bg-green" style="flex: {{ latest.limit_down }}"></div></div><div class="dist-labels"><span class="up">{{ latest.limit_up }}涨停</span><span class="down">{{ latest.limit_down }}跌停</span></div></div>
+            </div>
+        </div>
+
+
+        <!-- 2. 市场核心趋势 (Echarts可视化版) -->
+        <div class="card" style="padding-bottom: 5px;">
+            <div class="card-header">📈 市场核心指标趋势</div>
+            
+            <!-- 第一行：K线 + 成交量 -->
+            <div id="chart-kline" style="width: 100%; height: 350px; margin-bottom: 20px;"></div>
+            
+            <!-- 第二行：上涨vs下跌 | 涨停vs跌停 -->
+            <div class="row-flex" style="margin-bottom: 20px;">
+                <div id="chart-updown" class="col-half" style="height: 300px;"></div>
+                <div id="chart-limit" class="col-half" style="height: 300px;"></div>
+            </div>
+
+            <!-- 第三行：高度与晋级率 | 情绪分趋势 -->
+            <div class="row-flex" style="margin-bottom: 10px;">
+                <div id="chart-height" class="col-half" style="height: 300px;"></div>
+                <div id="chart-sentiment" class="col-half" style="height: 300px;"></div>
+            </div>
+        </div>
+
+
+        <div class="row-flex">
+            <!-- 3. 最强板块 -->
+            <div class="col-half">
+                <div class="card">
+                    <div class="card-header red-border">🔥 当日最强板块 TOP10</div>
+                    
+                    {% set ns_ts = namespace(limits=[]) %}
+                    {% for s in top_sectors %}
+                        {% if s.limit_count > 0 and s.limit_count not in ns_ts.limits %}
+                            {% set ns_ts.limits = ns_ts.limits + [s.limit_count] %}
+                        {% endif %}
+                    {% endfor %}
+                    {% set sorted_ts = ns_ts.limits | sort(reverse=True) %}
+                    {% set ts_thresh = namespace(val=9999) %}
+                    {% if sorted_ts|length >= 3 %}
+                        {% set ts_thresh.val = sorted_ts[2] %}
+                    {% elif sorted_ts|length > 0 %}
+                        {% set ts_thresh.val = sorted_ts[-1] %}
+                    {% endif %}
+
+                    <table>
+                        <thead><tr><th>板块名称</th><th>今日</th><th>5日</th><th>10日</th><th>涨停数</th></tr></thead>
+                        <tbody>
+                            {% for s in top_sectors %}
+                            <tr>
+                                <td style="text-align:left;">{{ s.industry }}</td>
+                                <td class="{{ 'up' if s.pct_1d > 0 else 'down' }}">{{ "%.2f"|format(s.pct_1d) }}%</td>
+                                <td class="{{ 'up' if s.pct_5d > 0 else 'down' }}">{{ "%.2f"|format(s.pct_5d) }}%</td>
+                                <td class="{{ 'up' if s.pct_10d > 0 else 'down' }}">{{ "%.2f"|format(s.pct_10d) }}%</td>
+                                <td>
+                                    {% if s.limit_count >= ts_thresh.val and s.limit_count > 0 %}
+                                        <span class="limit-max-up">{{ s.limit_count }}</span>
+                                    {% else %}
+                                        <span class="limit-up-normal">{{ s.limit_count }}</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <!-- 4. 最弱板块 -->
+            <div class="col-half">
+                <div class="card">
+                    <div class="card-header green-border">🧊 当日最拉垮板块 TOP10</div>
+                    
+                    {% set ns_bs = namespace(limits=[]) %}
+                    {% for s in bottom_sectors %}
+                        {% if s.limit_count > 0 and s.limit_count not in ns_bs.limits %}
+                            {% set ns_bs.limits = ns_bs.limits + [s.limit_count] %}
+                        {% endif %}
+                    {% endfor %}
+                    {% set sorted_bs = ns_bs.limits | sort(reverse=True) %}
+                    {% set bs_thresh = namespace(val=9999) %}
+                    {% if sorted_bs|length >= 3 %}
+                        {% set bs_thresh.val = sorted_bs[2] %}
+                    {% elif sorted_bs|length > 0 %}
+                        {% set bs_thresh.val = sorted_bs[-1] %}
+                    {% endif %}
+
+                    <table>
+                        <thead><tr><th>板块名称</th><th>今日</th><th>5日</th><th>10日</th><th>跌停数</th></tr></thead>
+                        <tbody>
+                            {% for s in bottom_sectors %}
+                            <tr>
+                                <td style="text-align:left;">{{ s.industry }}</td>
+                                <td class="{{ 'up' if s.pct_1d > 0 else 'down' }}">{{ "%.2f"|format(s.pct_1d) }}%</td>
+                                <td class="{{ 'up' if s.pct_5d > 0 else 'down' }}">{{ "%.2f"|format(s.pct_5d) }}%</td>
+                                <td class="{{ 'up' if s.pct_10d > 0 else 'down' }}">{{ "%.2f"|format(s.pct_10d) }}%</td>
+                                <td>
+                                    {% if s.limit_count >= bs_thresh.val and s.limit_count > 0 %}
+                                        <span class="limit-max-down">{{ s.limit_count }}</span>
+                                    {% else %}
+                                        <span class="limit-down-normal">{{ s.limit_count }}</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 概念板块 -->
+        <div class="row-flex">
+            <!-- 左侧：概念涨幅榜 -->
+            <div class="col-half">
+                <div class="card">
+                    <div class="card-header red-border">🔥 概念涨幅 TOP10 (含趋势)</div>
+
+                    {% set ns_tc = namespace(limits=[]) %}
+                    {% for item in top_concepts %}
+                        {% if item.limit_count > 0 and item.limit_count not in ns_tc.limits %}
+                            {% set ns_tc.limits = ns_tc.limits + [item.limit_count] %}
+                        {% endif %}
+                    {% endfor %}
+                    {% set sorted_tc = ns_tc.limits | sort(reverse=True) %}
+                    {% set tc_thresh = namespace(val=9999) %}
+                    {% if sorted_tc|length >= 3 %}
+                        {% set tc_thresh.val = sorted_tc[2] %}
+                    {% elif sorted_tc|length > 0 %}
+                        {% set tc_thresh.val = sorted_tc[-1] %}
+                    {% endif %}
+
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>概念名称</th>
+                                <th>今日</th>
+                                <th>5日</th>
+                                <th>10日</th>
+                                <th>涨停数</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in top_concepts %}
+                            <tr>
+                                <td class="stock-name" style="text-align:left;">{{ item.name }}</td>
+                                <td class="{{ 'up' if item.pct_chg > 0 else 'down' }}">{{ item.pct_chg }}%</td>
+                                <td class="{{ 'up' if item.pct_5d_val > 0 else 'down' }}">{{ item.pct_5d }}%</td>
+                                <td class="{{ 'up' if item.pct_10d_val > 0 else 'down' }}">{{ item.pct_10d }}%</td>
+                                <td>
+                                    {% if item.limit_count >= tc_thresh.val and item.limit_count > 0 %}
+                                        <span class="limit-max-up">{{ item.limit_count }}</span>
+                                    {% else %}
+                                        <span class="limit-up-normal">{{ item.limit_count }}</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 右侧：概念跌幅榜 -->
+            <div class="col-half">
+                <div class="card">
+                    <div class="card-header green-border">❄️ 概念跌幅 TOP10 (含趋势)</div>
+                    
+                    {% set ns_bc = namespace(limits=[]) %}
+                    {% for item in bottom_concepts %}
+                        {% if item.limit_count > 0 and item.limit_count not in ns_bc.limits %}
+                            {% set ns_bc.limits = ns_bc.limits + [item.limit_count] %}
+                        {% endif %}
+                    {% endfor %}
+                    {% set sorted_bc = ns_bc.limits | sort(reverse=True) %}
+                    {% set bc_thresh = namespace(val=9999) %}
+                    {% if sorted_bc|length >= 3 %}
+                        {% set bc_thresh.val = sorted_bc[2] %}
+                    {% elif sorted_bc|length > 0 %}
+                        {% set bc_thresh.val = sorted_bc[-1] %}
+                    {% endif %}
+
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>概念名称</th>
+                                <th>今日</th>
+                                <th>5日</th>
+                                <th>10日</th>
+                                <th>跌停数</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in bottom_concepts %}
+                            <tr>
+                                <td class="stock-name" style="text-align:left;">{{ item.name }}</td>
+                                <td class="{{ 'up' if item.pct_chg > 0 else 'down' }}">{{ item.pct_chg }}%</td>
+                                <td class="{{ 'up' if item.pct_5d_val > 0 else 'down' }}">{{ item.pct_5d }}%</td>
+                                <td class="{{ 'up' if item.pct_10d_val > 0 else 'down' }}">{{ item.pct_10d }}%</td>
+                                <td>
+                                    {% if item.limit_count >= bc_thresh.val and item.limit_count > 0 %}
+                                        <span class="limit-max-down">{{ item.limit_count }}</span>
+                                    {% else %}
+                                        <span class="limit-down-normal">{{ item.limit_count }}</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 选股策略模块 -->
+        <div class="card">
+            <div class="card-header" style="border-left-color: #f39c12;">🎯 量化选股策略池，仅供参考，不作为投资建议 (共 {{ total_count }} 支)</div>
+            
+            {% for strat_name, stock_list in grouped_stocks.items() %}
+            <div class="strategy-section">
+                <div class="strategy-header">
+                    {{ strat_name }}
+                    <span class="count-badge">{{ stock_list|length }}</span>
+                </div>
+                {% if stock_list %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th class="col-code">代码</th>
+                            <th class="col-name">名称</th>
+                            <th class="col-market">市场</th>
+                            <th class="col-ind">行业(涨幅)</th>
+                            <th class="col-concept">所属概念</th>
+                            <th class="col-price">现价</th>
+                            <th class="col-pct">涨幅</th>
+                            <th class="col-hist-date">最早入选</th>
+                            <th class="col-hist-count">总次数</th>
+                            <th class="col-score">评分</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for stock in stock_list %}
+                        <tr>
+                            <td>{{ stock.ts_code }}</td>
+                            <td>{{ stock.stock_name }}</td>
+                            <td><span class="market-tag market-{{ stock.market }}">{{ stock.market }}</span></td>
+                            <td>{{ stock.industry_html|safe }}</td>
+                            <td class="col-concept">{{ stock.concepts_str|safe }}</td>
+                            <td>{{ stock.close }}</td>
+                            <td class="{{ 'up' if stock.pct_chg > 0 else 'down' }}">{{ stock.pct_chg }}%</td>
+                            
+                            <!-- 日期列 -->
+                            <td><span class="hist-date">{{ stock.first_date }}</span></td>
+                            
+                            <!-- 次数列：高亮逻辑 -->
+                            <td>
+                                <span class="hist-count 
+                                    {{ 'count-super-hot' if stock.selection_count >= 5 
+                                       else ('count-hot' if stock.selection_count >= 2 else '') }}">
+                                    {{ stock.selection_count }}
+                                </span>
+                            </td>
+                            
+                            <td><span class="score-box">{{ stock.total_score }}</span></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div style="padding: 10px; color: #999; text-align: center; font-size: 13px;">该策略今日无符合条件的股票</div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+
+
+        <!-- 7. 监管异动监控 (三级预警 - 偏离值推演版) -->
+        <div class="card">
+            <div class="card-header purple-border">🚨 监管异动风控雷达 (偏离值推演)</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th width="8%">代码</th>
+                        <th width="10%">名称</th>
+                        <th width="8%">现价</th>
+                        <th width="8%">今日涨幅</th>
+                        <th width="12%">10日偏离<br><span style="font-size:10px; color:#999;">(阈值100%)</span></th>
+                        <th width="12%">30日偏离<br><span style="font-size:10px; color:#999;">(阈值200%)</span></th>
+                        <th width="27%" style="background:#fff3e0;">明日推演 / 触发条件</th>
+                        <th width="15%">状态评估</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for stock in regulatory_stocks %}
+                    <tr style="background-color: {{ '#fff5f5' if stock.level == 3 else ('#fffdf0' if stock.level == 2 else '#fff') }}">
+                        <td>{{ stock.ts_code }}</td>
+                        <td style="font-weight:bold;">{{ stock.stock_name }}</td>
+                        <td>{{ stock.close }}</td>
+                        
+                        <!-- 当日涨幅 -->
+                        <td class="{{ 'up' if stock.pct_today > 0 else 'down' }}" style="font-weight:bold;">
+                            {{ "%+.2f"|format(stock.pct_today) }}%
+                        </td>
+                        
+                        <!-- 10日偏离值 -->
+                        <td style="font-weight:bold; color: {{ '#e74c3c' if stock.d10_curr >= 100 else ('#d35400' if stock.d10_curr >= 80 else '#333') }}">
+                            {{ "%.2f"|format(stock.d10_curr) }}%
+                        </td>
+                        
+                        <!-- 30日偏离值 -->
+                        <td style="font-weight:bold; color: {{ '#e74c3c' if stock.d30_curr >= 200 else ('#d35400' if stock.d30_curr >= 150 else '#333') }}">
+                            {{ "%.2f"|format(stock.d30_curr) }}%
+                        </td>
+
+                        <!-- 核心推演信息 -->
+                        <td style="background:#fff9ed; text-align: left; padding-left: 15px;">
+                            <div style="font-weight:bold; color: {{ '#c0392b' if stock.level >= 2 else '#333' }};">
+                                {{ stock.trigger_info }}
+                            </div>
+                            <div style="font-size:11px; color:#999; margin-top:2px;">
+                                {{ stock.status_info }}
+                            </div>
+                        </td>
+                        
+                        <!-- 状态标签 -->
+                        <td>
+                            {% if stock.level == 3 %}
+                                <span class="badge" style="background:#c0392b;">🔴 已触发</span>
+                            {% elif stock.level == 2 %}
+                                <span class="badge" style="background:#e67e22;">🟠 临界预警</span>
+                            {% else %}
+                                <span class="badge" style="background:#f39c12;">🟡 趋势监控</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="8" style="color:#999; padding:15px; text-align:center;">当前市场暂无逼近严重异动个股</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        
+        <div style="text-align: center; color: #ccc; font-size: 12px; margin-top: 20px;">
+            Generated by 罗大虾 at {{ generate_time }}
+        </div>
+    </div>
+
+
+<!-- Echarts 渲染脚本 -->
+    <script>
+        // ==========================================
+        // 全局主题配色 (低饱和度、柔和舒适)
+        // ==========================================
+        const colorUp = '#e06666';   // 柔和红 (上涨/阳线/涨停)
+        const colorDown = '#5cba8a'; // 柔和绿 (下跌/阴线/跌停)
+        const colorBlue = '#6da2e8'; // 柔和蓝 (连板高度)
+        const colorText = '#111111'; // 极深灰/黑色 (用于极限值标签)
+
+        // 1. 解析后端传来的趋势数据
+        const rawHistory = {{ trend_history | tojson }};
+        const chartDataAll = rawHistory.slice().reverse(); // 30天全量数据
+        const chartData10 = chartDataAll.slice(-10);       // 近10天数据
+
+        // ==========================================
+        // 数据准备：30天K线与成交量
+        // ==========================================
+        const datesAll = chartDataAll.map(item => item.date_str);
+        const klineData = chartDataAll.map(item => [
+            item.sh_open || item.sh_close, 
+            item.sh_close, 
+            item.sh_low || item.sh_close, 
+            item.sh_high || item.sh_close
+        ]);
+        
+        // 成交量：颜色跟随 K线
+        const volumes = chartDataAll.map(item => {
+            const open = item.sh_open || item.sh_close;
+            const close = item.sh_close;
+            const isUp = close >= open;
+            return {
+                value: item.amount,
+                itemStyle: { color: isUp ? colorUp : colorDown } 
+            };
+        });
+
+        // ==========================================
+        // 数据准备：近10天其他指标
+        // ==========================================
+        const dates10 = chartData10.map(item => item.date_str);
+        const upCounts = chartData10.map(item => item.up_count);
+        const downCounts = chartData10.map(item => -item.down_count); 
+        const limitUps = chartData10.map(item => item.limit_up);
+        const limitDowns = chartData10.map(item => -item.limit_down);
+        const heights = chartData10.map(item => item.height);
+        const promoRates = chartData10.map(item => item.promo_rate);
+        const scores = chartData10.map(item => item.score);
+
+        const axisLabelAbs = { formatter: (value) => Math.abs(value) };
+
+        // ==========================================
+        // 图表1: 上证指数 K线 + 成交量 (30天)
+        // ==========================================
+        const chartKline = echarts.init(document.getElementById('chart-kline'));
+        chartKline.setOption({
+            animation: false, title: { text: '上证指数与两市成交额 (近30日)', textStyle: {fontSize: 14} },
+            tooltip: { 
+                trigger: 'axis', axisPointer: { type: 'cross' },
+                formatter: function (params) {
+                    let res = params[0].name + '<br/>';
+                    params.forEach(p => {
+                        if (p.seriesName === 'K线') {
+                            res += `指数: 开 <b>${p.value[1].toFixed(2)}</b> 收 <b>${p.value[2].toFixed(2)}</b> 低 <b>${p.value[3].toFixed(2)}</b> 高 <b>${p.value[4].toFixed(2)}</b><br/>`;
+                        } else if (p.seriesName === '成交额') {
+                            res += `两市成交额: <b>${Math.round(p.value)}</b> 亿<br/>`;
+                        }
+                    });
+                    return res;
+                }
+            },
+            axisPointer: { link: {xAxisIndex: 'all'} }, 
+            grid: [
+                { left: '8%', right: '8%', top: '15%', height: '50%' },
+                { left: '8%', right: '8%', top: '70%', height: '20%' } 
+            ],
+            xAxis: [
+                { type: 'category', data: datesAll, boundaryGap: true, axisLine: {onZero: false} },
+                { type: 'category', data: datesAll, gridIndex: 1, show: false }
+            ],
+            yAxis: [
+                { scale: true, splitArea: {show: true} },
+                { type: 'value', gridIndex: 1, splitNumber: 2, axisLabel: {formatter: '{value}亿'} }
+            ],
+            series: [
+                {
+                    name: 'K线', type: 'candlestick', data: klineData,
+                    itemStyle: { color: colorUp, color0: colorDown, borderColor: colorUp, borderColor0: colorDown },
+                    markPoint: { 
+                        label: { color: colorText, fontSize: 11, fontWeight: 'bold', formatter: (p) => p.value.toFixed(2) },
+                        data: [
+                            { type: 'max', valueDim: 'highest', name: '最高价', itemStyle: {color: colorUp, opacity: 0.8} },
+                            { type: 'min', valueDim: 'lowest', name: '最低价', itemStyle: {color: colorDown, opacity: 0.8} }
+                        ]
+                    },
+                    markLine: { 
+                        symbol: ['none', 'none'],
+                        data: [
+                            {
+                                yAxis: chartDataAll[chartDataAll.length - 1].sh_close,
+                                label: { formatter: '当日收盘 {c}', position: 'end', color: colorText, fontSize: 11, fontWeight: 'bold' },
+                                lineStyle: { color: '#888', type: 'dashed', width: 1.5 }
+                            }
+                        ]
+                    }
+                },
+                { name: '成交额', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: volumes }
+            ]
+        });
+
+        // ==========================================
+        // 图表2: 上涨家数 vs 下跌家数 (10天)
+        // ==========================================
+        const chartUpDown = echarts.init(document.getElementById('chart-updown'));
+        chartUpDown.setOption({
+            animation: false, title: { text: '全市场涨跌家数对比', textStyle: {fontSize: 14} },
+            tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+            legend: { data: ['上涨', '下跌'], right: 10 },
+            grid: { left: '12%', right: '5%', bottom: '10%' },
+            xAxis: { type: 'category', data: dates10 },
+            yAxis: { type: 'value', axisLabel: axisLabelAbs },
+            series: [
+                { 
+                    name: '上涨', type: 'bar', stack: 'Total', data: upCounts, 
+                    itemStyle: { color: colorUp }, 
+                    label: {show: true, position: 'top', color: colorUp, fontSize: 10} 
+                },
+                { 
+                    name: '下跌', type: 'bar', stack: 'Total', data: downCounts, 
+                    itemStyle: { color: colorDown }, 
+                    label: {show: true, position: 'bottom', formatter: (p) => Math.abs(p.value), color: colorDown, fontSize: 10} 
+                }
+            ]
+        });
+
+        // ==========================================
+        // 图表3: 涨停家数 vs 跌停家数 (10天)
+        // ==========================================
+        const chartLimit = echarts.init(document.getElementById('chart-limit'));
+        chartLimit.setOption({
+            animation: false, title: { text: '涨停 vs 跌停家数对比', textStyle: {fontSize: 14} },
+            tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+            legend: { data: ['涨停', '跌停'], right: 10 },
+            grid: { left: '10%', right: '5%', bottom: '10%' },
+            xAxis: { type: 'category', data: dates10 },
+            yAxis: { type: 'value', axisLabel: axisLabelAbs },
+            series: [
+                { 
+                    name: '涨停', type: 'bar', stack: 'Total', data: limitUps, 
+                    itemStyle: { color: colorUp }, 
+                    label: {show: true, position: 'top', color: colorUp} 
+                },
+                { 
+                    name: '跌停', type: 'bar', stack: 'Total', data: limitDowns, 
+                    itemStyle: { color: colorDown }, 
+                    label: {show: true, position: 'bottom', formatter: (p) => Math.abs(p.value), color: colorDown} 
+                }
+            ]
+        });
+
+        // ==========================================
+        // 图表4: 连板高度与晋级率 (10天)
+        // ==========================================
+        const chartHeight = echarts.init(document.getElementById('chart-height'));
+        chartHeight.setOption({
+            animation: false, title: { text: '市场高度与打板晋级率', textStyle: {fontSize: 14} },
+            tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+            legend: { data: ['连板高度', '晋级率'], right: 10 },
+            grid: { left: '10%', right: '12%', bottom: '10%' },
+            xAxis: { type: 'category', data: dates10 },
+            yAxis: [
+                { type: 'value', name: '高度(板)', minInterval: 1, splitLine: { show: false } },
+                { type: 'value', name: '晋级率(%)', min: 0, max: 100, axisLabel: { formatter: '{value}%' }, splitLine: { show: false } }
+            ],
+            series: [
+                { 
+                    name: '连板高度', type: 'bar', yAxisIndex: 0, data: heights, 
+                    itemStyle: { color: colorBlue, borderRadius: [4, 4, 0, 0] }, 
+                    label: {show: true, position: 'top', color: colorBlue} 
+                },
+                { 
+                    name: '晋级率', type: 'line', yAxisIndex: 1, data: promoRates, smooth: true, 
+                    itemStyle: { color: '#8e44ad' }, lineStyle: { width: 3 } 
+                }
+            ]
+        });
+
+        // ==========================================
+        // 图表5: 情绪分区间趋势 (10天)
+        // ==========================================
+        const chartSentiment = echarts.init(document.getElementById('chart-sentiment'));
+        chartSentiment.setOption({
+            animation: false, title: { text: '市场情绪分变动趋势', textStyle: {fontSize: 14} },
+            tooltip: { trigger: 'axis' },
+            grid: { left: '10%', right: '5%', bottom: '10%' },
+            xAxis: { type: 'category', data: dates10, boundaryGap: false },
+            yAxis: { type: 'value', min: 0, max: 100 },
+            series: [
+                {
+                    name: '情绪分', type: 'line', data: scores, smooth: true,
+                    symbolSize: 8, itemStyle: { color: colorBlue }, lineStyle: { width: 4 }, 
+                    label: { show: true, position: 'top', formatter: '{c}分', color: colorText, fontWeight: 'bold' },
+                    markArea: {
+                        silent: true, 
+                        itemStyle: { opacity: 0.15 }, 
+                        data: [
+                            [ { yAxis: 80, itemStyle: { color: colorUp } }, { yAxis: 100 } ], 
+                            [ { yAxis: 60, itemStyle: { color: '#f3c853' } }, { yAxis: 80 } ],  
+                            [ { yAxis: 0,  itemStyle: { color: colorDown } }, { yAxis: 60 } ]   
+                        ]
+                    }
+                }
+            ]
+        });
+    </script>
+
+</body>
+</html>

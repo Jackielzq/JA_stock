@@ -1,0 +1,29 @@
+# A股量化分析系统依赖包
+# 核心依赖
+pandas
+numpy
+tushare
+SQLAlchemy
+jinja2
+
+# 网络相关
+requests
+openai
+urllib3
+
+# 服务相关
+playwright
+selenium
+webdriver-manager
+
+# 数据获取
+pywencai
+
+# 数据库驱动
+pymysql
+
+# 其他工具包
+argparse
+
+# 安装命令：pip install -r requirements.txt
+# 注意：安装后需要执行 playwright install 来安装浏览器

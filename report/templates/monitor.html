@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>自选监控池复盘日报 - {{ date }}</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #f4f7fa; --card-bg: #ffffff; --text-main: #2c3e50; 
+            --text-sub: #7f8c8d; --border-color: #eef0f4;
+            --red-color: #e74c3c; --green-color: #00b07c;
+        }
+        body { font-family: 'Helvetica Neue', 'PingFang SC', 'Microsoft YaHei', sans-serif; background-color: var(--bg-color); margin: 0; padding: 20px; color: var(--text-main); }
+        .container { max-width: 1400px; margin: 0 auto; }
+        
+        .header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 24px; padding: 0 10px; }
+        .header h1 { margin: 0; font-size: 26px; font-weight: 600; color: #1a202c; }
+        .header p { margin: 0; color: var(--text-sub); font-size: 13px; }
+
+        .card { background: var(--card-bg); border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.04); padding: 24px; margin-bottom: 24px; border: 1px solid var(--border-color); }
+        .card-title { font-size: 18px; font-weight: 600; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between;}
+        .title-left { display: flex; align-items: center; }
+        .title-left::before { content: ""; display: inline-block; width: 4px; height: 18px; background-color: #3498db; margin-right: 10px; border-radius: 2px; }
+
+        /* 动态过滤按钮样式 */
+        .filter-panel { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px dashed #eef0f4; align-items: center;}
+        .filter-btn { 
+            background: #e0f2fe; color: #0284c7; border: 1px solid #bae6fd; 
+            padding: 4px 12px; border-radius: 15px; font-size: 12px; font-weight: 600;
+            cursor: pointer; transition: all 0.2s; user-select: none;
+        }
+        .filter-btn.inactive { background: #f1f5f9; color: #94a3b8; border-color: #e2e8f0; text-decoration: line-through; }
+        .filter-btn:hover { filter: brightness(0.95); }
+        
+        .action-btn { background: #ffffff; color: #475569; border: 1px solid #cbd5e1; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+        .action-btn:hover { background: #f8fafc; border-color: #94a3b8; color: #1e293b; }
+        .filter-divider { width: 1px; height: 20px; background: #e2e8f0; margin: 0 4px; }
+
+        /* 表格精美样式与排序 */
+        .table-wrapper { overflow-x: auto; }
+        table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 14px; }
+        th, td { padding: 14px 10px; text-align: center; border-bottom: 1px solid var(--border-color); }
+        td.no-wrap { white-space: nowrap; }
+
+        th { background-color: #f8fafc; color: #475569; font-weight: 600; white-space: nowrap; cursor: pointer; user-select: none; transition: background 0.2s;}
+        th:hover { background-color: #e2e8f0; }
+        th::after { content: ' \21C5'; opacity: 0.3; font-size: 12px; margin-left: 4px; }
+        tr:hover td { background-color: #fcfdfe; }
+        
+        .stock-name { font-weight: bold; color: #1e293b; font-size: 15px; }
+        .ts-code { color: var(--text-sub); font-size: 12px; }
+        .red { color: var(--red-color); font-weight: 600; }
+        .green { color: var(--green-color); font-weight: 600; }
+        .score-text { color: #f59e0b; font-weight: 700; font-size: 15px; } /* 评分特殊样式 */
+
+        .tag-board { background: #e0f2fe; color: #0284c7; padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: 500; }
+        .tag-limit { background: #fff1f0; color: #e74c3c; padding: 4px 8px; border-radius: 4px; font-weight: bold; border: 1px solid #ffa39e; font-size: 13px; white-space: nowrap;}
+        .tag-none { color: #a0aec0; }
+        
+        .tag-concept { color: #8b5cf6; font-weight: 600; font-size: 13px; text-align: left; line-height: 1.5; }
+        .cell-remark { text-align: left; max-width: 250px; font-size: 13px; color: #64748b; line-height: 1.5; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div><h1>🎯 核心自选池全景监控</h1></div>
+            <div>
+                <p>复盘日期：<b>{{ date }}</b></p>
+                <p>生成时间：{{ generate_time }}</p>
+            </div>
+        </div>
+
+        <!-- 板块轮动日历热力图 -->
+        <div class="card">
+            <div class="card-title">
+                <div class="title-left">自选概念池 - 近30日资金轮动热力图</div>
+                <div style="font-size: 12px; color: #94a3b8; font-weight: normal;">点击下方标签隐藏/显示概念</div>
+            </div>
+            <div class="filter-panel" id="conceptFilters"></div>
+            <div id="trendChart" style="width: 100%;"></div>
+        </div>
+
+        <!-- 个股监控表格 -->
+        <div class="card">
+            <div class="card-title"><div class="title-left">核心个股监控雷达 (点击表头可重新排序)</div></div>
+            <div class="table-wrapper">
+                <table id="monitorTable">
+                    <thead>
+                        <tr>
+                            <th data-col="0" data-type="str">代码</th>
+                            <th data-col="1" data-type="str">名称</th>
+                            <th data-col="2" data-type="str">板块</th>
+                            <th data-col="3" data-type="num">收盘价</th>
+                            <th data-col="4" data-type="num">当日涨幅</th>
+                            <th data-col="5" data-type="num">换手率</th>
+                            <th data-col="6" data-type="num">总市值</th>
+                            <th data-col="7" data-type="str">涨停监控</th>
+                            <th data-col="8" data-type="str" style="text-align: left; width: 20%;">命中的关注概念</th>
+                            <!-- 新增评分表头 -->
+                            <th data-col="9" data-type="num">综合评分</th>
+                            <th data-col="10" data-type="str" style="text-align: left; width: 25%;">逻辑备注</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for stock in stock_list %}
+                        <tr>
+                            <td class="no-wrap"><span class="ts-code">{{ stock.ts_code }}</span></td>
+                            <td class="stock-name no-wrap">{{ stock.name }}</td>
+                            <td class="no-wrap"><span class="tag-board">{{ stock.board }}</span></td>
+                            <td class="no-wrap" style="font-weight:600;" data-val="{{ stock.close }}">{{ stock.close }}</td>
+                            <td class="no-wrap {% if stock.pct_chg > 0 %}red{% elif stock.pct_chg < 0 %}green{% endif %}" data-val="{{ stock.pct_chg }}">
+                                {{ stock.pct_chg }}%
+                            </td>
+                            <td class="no-wrap" data-val="{{ stock.turnover_rate }}">{{ stock.turnover_rate }}%</td>
+                            <td class="no-wrap" data-val="{{ stock.total_mv_val }}">{{ stock.total_mv }} 亿</td>
+                            <td class="no-wrap" data-val="{{ stock.xy_boards }}">
+                                {% if stock.xy_boards != '-' %}
+                                    <span class="tag-limit">🔥 {{ stock.xy_boards }}</span>
+                                {% else %}
+                                    <span class="tag-none">-</span>
+                                {% endif %}
+                            </td>
+                            <td class="tag-concept">{{ stock.concept_str }}</td>
+                            <!-- 新增评分单元格 -->
+                            <td class="no-wrap score-text" data-val="{{ stock.total_score }}">{{ stock.total_score }}</td>
+                            
+                            <td class="cell-remark">{{ stock.remark }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 图表与交互逻辑 -->
+    <script>
+        var chartDom = document.getElementById('trendChart');
+        var myChart = echarts.init(chartDom);
+        
+        var originalDates = {{ concept_trends.dates | tojson }};
+        var originalConcepts = {{ concept_trends.concepts | tojson }};
+        var originalData = {{ concept_trends.data | tojson }};
+        var conceptVisibility = originalConcepts.map(() => true);
+
+        function initFilters() {
+            var filterHtml = `
+                <div class="filter-btn action-btn" onclick="setAllConcepts(true)">✅ 全选</div>
+                <div class="filter-btn action-btn" onclick="setAllConcepts(false)">❌ 全部不选</div>
+                <div class="filter-divider"></div>
+            `;
+            originalConcepts.forEach((c, idx) => {
+                filterHtml += `<div class="filter-btn" onclick="toggleConcept(${idx})" id="btn-${idx}">${c}</div>`;
+            });
+            document.getElementById('conceptFilters').innerHTML = filterHtml;
+        }
+
+        function setAllConcepts(state) {
+            for (let i = 0; i < conceptVisibility.length; i++) {
+                conceptVisibility[i] = state;
+                var btn = document.getElementById(`btn-${i}`);
+                if (state) {
+                    btn.classList.remove('inactive');
+                } else {
+                    btn.classList.add('inactive');
+                }
+            }
+            renderChart();
+        }
+
+        function toggleConcept(idx) {
+            conceptVisibility[idx] = !conceptVisibility[idx];
+            var btn = document.getElementById(`btn-${idx}`);
+            if (conceptVisibility[idx]) btn.classList.remove('inactive');
+            else btn.classList.add('inactive');
+            renderChart();
+        }
+
+        function renderChart() {
+            var visibleConcepts = [];
+            var oldToNewY = {};
+            
+            originalConcepts.forEach((c, idx) => {
+                if (conceptVisibility[idx]) {
+                    oldToNewY[idx] = visibleConcepts.length;
+                    visibleConcepts.push(c);
+                }
+            });
+
+            var newData = [];
+            originalData.forEach(item => {
+                let x = item[0]; let oldY = item[1]; let val = item[2];
+                if (conceptVisibility[oldY]) {
+                    newData.push([x, oldToNewY[oldY], val]);
+                }
+            });
+
+            var newHeight = visibleConcepts.length === 0 ? 100 : Math.max(visibleConcepts.length * 35 + 100, 200);
+            document.getElementById('trendChart').style.height = newHeight + 'px';
+            myChart.resize();
+
+            var option = {
+                tooltip: {
+                    position: 'top', backgroundColor: 'rgba(255,255,255,0.95)',
+                    formatter: function (params) {
+                        let pct = params.value[2];
+                        let color = pct > 0 ? '#e74c3c' : (pct < 0 ? '#00b07c' : '#7f8c8d');
+                        return `<div style="font-size:13px;">${originalDates[params.value[0]]} - <b>${visibleConcepts[params.value[1]]}</b><br/>`
+                             + `日涨幅：<span style="color:${color};font-weight:bold;font-size:15px;">${pct > 0 ? '+' : ''}${pct}%</span></div>`;
+                    }
+                },
+                grid: { top: '5%', bottom: '15%', left: '10%', right: '2%' },
+                xAxis: { type: 'category', data: originalDates, axisLabel: { color: '#64748b' }, axisLine: { lineStyle: { color: '#cbd5e1' } } },
+                yAxis: { 
+                    type: 'category', data: visibleConcepts, 
+                    axisLabel: { color: '#334155', fontWeight: 'bold' }, axisLine: { show: false }, axisTick: { show: false },
+                    inverse: true 
+                },
+                visualMap: {
+                    min: -4, max: 4, calculable: true, orient: 'horizontal', left: 'center', bottom: '0%',
+                    inRange: { color: ['#008f61', '#b7ebd6', '#f8fafc', '#fed7d7', '#c0392b'] },
+                    textStyle: { color: '#64748b' }
+                },
+                series: [{
+                    name: '日涨幅', type: 'heatmap', data: newData,
+                    label: { show: true, formatter: p => p.value[2]>0 ? '+'+p.value[2] : p.value[2], fontSize: 11, color: '#1e293b' },
+                    itemStyle: { borderColor: '#ffffff', borderWidth: 2 }
+                }]
+            };
+            myChart.setOption(option);
+        }
+
+        initFilters();
+        renderChart();
+        window.addEventListener('resize', () => myChart.resize());
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const table = document.getElementById("monitorTable");
+            const headers = table.querySelectorAll("th");
+            const tbody = table.querySelector("tbody");
+            let sortDirections = Array.from(headers).map(() => false);
+
+            headers.forEach((header, index) => {
+                header.addEventListener("click", () => {
+                    const type = header.getAttribute("data-type");
+                    const isAsc = sortDirections[index];
+                    sortDirections[index] = !isAsc;
+
+                    headers.forEach(h => h.style.backgroundColor = "");
+                    header.style.backgroundColor = "#e2e8f0";
+
+                    const rows = Array.from(tbody.querySelectorAll("tr"));
+                    rows.sort((a, b) => {
+                        let valA = a.children[index].getAttribute("data-val") || a.children[index].innerText;
+                        let valB = b.children[index].getAttribute("data-val") || b.children[index].innerText;
+
+                        if (type === "num") {
+                            valA = parseFloat(valA.replace(/[^\d.-]/g, '')) || 0;
+                            valB = parseFloat(valB.replace(/[^\d.-]/g, '')) || 0;
+                            return isAsc ? valA - valB : valB - valA;
+                        } else {
+                            return isAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+                        }
+                    });
+                    
+                    rows.forEach(row => tbody.appendChild(row));
+                });
+            });
+        });
+    </script>
+</body>
+</html>

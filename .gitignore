@@ -1,0 +1,32 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local config and secrets
+config/settings.local.py
+.env
+.env.*
+
+# Backup and temporary folders
+backups/
+data/cache/
+tmp/
+data/历史交割.xls
+data/input/monitor_pool.local.xlsx
+
+# Generated outputs
+output/*
+!output/architecture_diagram.svg
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+*.log
+启动Windows Terminal.lnk
