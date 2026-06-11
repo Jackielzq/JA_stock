@@ -1,19 +1,21 @@
-# core/factor_calculator.py - 终极完整版 v11.1 (新增评分写库与概念拼接引擎)
+# core/factor_calculator.py - 终极完整版 v11.4 (引入多因子基本面打分、未来日期占位保护与数值强制对齐)
 import pandas as pd
 import numpy as np
-from sqlalchemy import text
+from sqlalchemy import text, MetaData, Table, Column, Integer, String, Float, Index, inspect
+from sqlalchemy.types import String as SQLString, Float as SQLFloat
 from datetime import datetime, timedelta
 from utils.market_utils import infer_market
 import logging
 import tushare as ts
-from sqlalchemy.types import String, Float
 from config import TUSHARE_TOKEN
 
 class FactorCalculator:
     def __init__(self, db_engine):
         self.db = db_engine
         self._stock_basic_cache = None
-        self._init_daily_data_columns() # 自动检查并添加新字段
+        self._init_daily_data_columns()   # 自动检查并添加新字段
+        self._init_financials_table()     # 初始化基础财务表
+        self._init_rankings_table()       # 自动初始化综合排名表
 
     def _init_daily_data_columns(self):
         """初始化 daily_data 表，确保包含评分和概念拼接字段"""
@@ -26,6 +28,58 @@ class FactorCalculator:
         except Exception as e:
             logging.error(f"检查 daily_data 字段失败: {e}")
 
+    def _init_financials_table(self):
+        """初始化 stock_financials 表，用于缓存从 AkShare 获取的个股基础财务数据"""
+        try:
+            engine = self.db.get_engine()
+            insp = inspect(engine)
+            if not insp.has_table('stock_financials'):
+                metadata = MetaData()
+                financials_table = Table(
+                    'stock_financials', metadata,
+                    Column('id', Integer, primary_key=True, autoincrement=True),
+                    Column('ts_code', SQLString(20), index=True),
+                    Column('period', SQLString(20), index=True),        # 报告期，如 '20240930'
+                    Column('ann_date', SQLString(20)),                 # 公告日期
+                    Column('revenue', Float, default=0.0),             # 营业总收入 (元)
+                    Column('net_profit', Float, default=0.0),          # 净利润 (元)
+                    Column('roe', Float, default=0.0),                 # 净资产收益率 (%)
+                    Column('processed_time', SQLString(50)),
+                    Index('idx_code_period', 'ts_code', 'period', unique=True)
+                )
+                metadata.create_all(engine)
+                logging.info("成功创建并初始化 stock_financials 财务基础数据表。")
+        except Exception as e:
+            logging.error(f"初始化 stock_financials 表失败: {e}")
+
+    def _init_rankings_table(self):
+        """初始化 daily_rankings 表，用于存储个股每日综合评分、多因子行业地位及全市排名"""
+        try:
+            engine = self.db.get_engine()
+            insp = inspect(engine)
+            if not insp.has_table('daily_rankings'):
+                metadata = MetaData()
+                rankings_table = Table(
+                    'daily_rankings', metadata,
+                    Column('id', Integer, primary_key=True, autoincrement=True),
+                    Column('trade_date', SQLString(20), index=True),
+                    Column('ts_code', SQLString(20), index=True),
+                    Column('stock_name', SQLString(50)),
+                    Column('industry', SQLString(50)),
+                    Column('total_mv', Float),          # 单位：亿元
+                    Column('total_score', Float),       # 综合评分 (0~10分)
+                    Column('ind_mv_rank', Integer),      # 同行业内市值排名
+                    Column('ind_stock_count', Integer),  # 同行业成分股总数
+                    Column('ind_mv_ratio', Float),       # 行业龙头系数 (0.0~1.0)
+                    Column('overall_rank', Integer),     # 全市综合排名
+                    Column('processed_time', SQLString(50)),
+                    Index('idx_date_code', 'trade_date', 'ts_code', unique=True)
+                )
+                metadata.create_all(engine)
+                logging.info("成功创建并初始化 daily_rankings 综合排名数据表。")
+        except Exception as e:
+            logging.error(f"初始化 daily_rankings 表失败: {e}")
+
     def _get_data(self, sql, conn=None):
         try:
             if conn:
@@ -36,24 +90,184 @@ class FactorCalculator:
             logging.error(f"SQL执行错误: {e}")
             return pd.DataFrame()
 
+    def _get_latest_report_period(self, target_date_str):
+        """
+        根据当前交易日期，智能推算已完整披露的最新财务报告期。
+        规避财报披露时间差导致的未来函数偏误。
+        """
+        try:
+            dt = datetime.strptime(target_date_str.replace('-', ''), '%Y%m%d')
+            year = dt.year
+            month = dt.month
+            if month >= 11:    # 11月及以后，三季报（09-30）已强制披露完毕
+                return f"{year}0930"
+            elif month >= 9:   # 9月至10月，半年报（06-30）已强制披露完毕
+                return f"{year}0630"
+            elif month >= 5:   # 5月至8月，一季报（03-31）已强制披露完毕
+                return f"{year}0331"
+            else:              # 1月至4月，使用上个年度的年报（12-31）
+                return f"{year-1}1231"
+        except Exception:
+            return f"{datetime.now().year - 1}1231"
+
+
+    def sync_financial_data(self, target_date):
+        """
+        自动判断并同步目标日期所属周期的财务数据 (使用 AkShare 免 Token 批量获取)
+        安全防护机制：如果接口抓取失败（如网络波动或未来日期回测无数据），绝不污染数据库，内存中会自动以0值安全计算。
+        """
+        period = self._get_latest_report_period(target_date)
+        
+        # 1. 检查本地是否已有该周期数据
+        try:
+            with self.db.get_engine().connect() as conn:
+                count = conn.execute(text(f"SELECT COUNT(*) FROM stock_financials WHERE period = '{period}'")).scalar()
+            if count > 1000:
+                logging.info(f"本地已有 {period} 财务数据共 {count} 条，无需同步。")
+                return
+        except Exception as e:
+            logging.error(f"检查本地财务数据存在性失败: {e}")
+
+        logging.info(f"🚀 本地缺少 {period} 财务数据，正在通过 AkShare 同步全市场季报指标...")
+        
+        df_ak = None
+        try:
+            import akshare as ak
+            period_dash = f"{period[:4]}-{period[4:6]}-{period[6:]}"
+            # 尝试拉取财务数据
+            df_ak = ak.stock_yjbb_em(date=period_dash)
+        except Exception as e:
+            logging.error(f"通过 AkShare 接口获取财务数据时发生异常: {e}")
+
+        # 核心修改：如果抓取失败（返回 None、空表或未来日期无数据），绝不向数据库写入任何脏数据，直接安全返回
+        if df_ak is None or not isinstance(df_ak, pd.DataFrame) or df_ak.empty:
+            logging.warning(f"⚠️ 无法从数据接口获取到 {period} 周期的财务数据（回测未来日期时属于正常现象）。"
+                            f"系统将维持本地数据库原样，并在内存计算中自动以 0 值对齐，确保安全平稳运行。")
+            return
+
+        # 2. 只有在成功获取到非空真实数据时，才进行数据库的安全覆盖写入
+        try:
+            # 弹性列名匹配 (防止东财网页调整列名导致报错)
+            rename_map = {}
+            for col in df_ak.columns:
+                if '代码' in col:
+                    rename_map[col] = 'code'
+                elif '营业收入' in col and '同比' not in col and '季度' not in col:
+                    rename_map[col] = 'revenue'
+                elif '净利润' in col and '同比' not in col and '季度' not in col:
+                    rename_map[col] = 'net_profit'
+                elif '净资产收益率' in col or 'ROE' in col:
+                    rename_map[col] = 'roe'
+                elif '公告日期' in col:
+                    rename_map[col] = 'ann_date'
+
+            df_ak = df_ak.rename(columns=rename_map)
+
+            # 过滤并保留所需字段
+            required_cols = ['code', 'ann_date', 'revenue', 'net_profit', 'roe']
+            for col in required_cols:
+                if col not in df_ak.columns:
+                    df_ak[col] = 0.0 if col != 'code' and col != 'ann_date' else '-'
+
+            df_clean = df_ak[required_cols].copy()
+
+            # 将纯数字代码转换为带后缀的 ts_code
+            def format_to_ts_code(code_val):
+                c_str = str(code_val).strip().zfill(6)
+                if c_str.startswith('6'):
+                    return f"{c_str}.SH"
+                elif c_str.startswith(('0', '3')):
+                    return f"{c_str}.SZ"
+                elif c_str.startswith(('8', '4', '9')):
+                    return f"{c_str}.BJ"
+                return c_str
+
+            df_clean['ts_code'] = df_clean['code'].apply(format_to_ts_code)
+            df_clean['period'] = period
+            
+            # 数据类型清洗
+            df_clean['revenue'] = pd.to_numeric(df_clean['revenue'], errors='coerce').fillna(0.0)
+            df_clean['net_profit'] = pd.to_numeric(df_clean['net_profit'], errors='coerce').fillna(0.0)
+            df_clean['roe'] = pd.to_numeric(df_clean['roe'], errors='coerce').fillna(0.0)
+            df_clean['processed_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+            df_save = df_clean[['ts_code', 'period', 'ann_date', 'revenue', 'net_profit', 'roe', 'processed_time']].copy()
+            df_save = df_save.drop_duplicates(subset=['ts_code', 'period'])
+
+            # 写入本地数据库
+            with self.db.get_engine().begin() as conn:
+                conn.execute(text(f"DELETE FROM stock_financials WHERE period = '{period}'"))
+                df_save.to_sql('stock_financials', conn, index=False, if_exists='append')
+                
+            logging.info(f"AkShare 成功获取真实财报！已将 {len(df_save)} 条 {period} 周期的财务快照保存至 stock_financials。")
+            
+        except Exception as e:
+            logging.error(f"解析并保存 AkShare 财务数据时发生异常: {e}")
+
+
     def update_daily_factors(self, date):
         """
-        [全局通用因子引擎] 计算个股总分和监控概念拼接，并写入 daily_data 表。
-        强烈建议：在每天下载完基础日线数据后，立刻调用此方法。
+        [全局通用因子与排名引擎] 融合多因子归一化评分，计算个股总分、拼接概念，并生成个股行业与全市综合排名。
         """
-        logging.info(f"正在计算全局基础因子并落库 (日期: {date})...")
+        logging.info(f"正在计算全局因子与多维度排名并落库 (日期: {date})...")
         
-        # 1. 取出当日所有股票基础数据
-        sql = text(f"""
-            SELECT ts_code, close, total_mv, turnover_rate, ma_5, ma_10, ma_20 
+        # 1. 自动同步并加载最新季报基本面数据
+        self.sync_financial_data(date)
+        period = self._get_latest_report_period(date)
+        
+        # 2. 取出当日所有股票行情数据
+        sql_daily = text(f"""
+            SELECT ts_code, stock_name, industry, close, total_mv, turnover_rate, ma_5, ma_10, ma_20 
             FROM daily_data WHERE trade_date = '{date}'
         """)
-        df = self._get_data(sql)
-        if df.empty:
+        df_daily = self._get_data(sql_daily)
+        if df_daily.empty:
             logging.warning(f"{date} 无日线数据，跳过因子计算。")
             return
 
-        # 2. 获取监控概念池 (两步走，避免字符集冲突)
+        # 3. 读取本地已同步的财务快照
+        sql_fin = text(f"SELECT ts_code, revenue, net_profit, roe FROM stock_financials WHERE period = '{period}'")
+        df_fin = self._get_data(sql_fin)
+        
+        # 4. 行情数据与财务数据在 Pandas 内部向量化合并
+        df_merged = pd.merge(df_daily, df_fin, on='ts_code', how='left')
+        
+        # 核心修复 2：强制将所有待运算及比较的字段显式转换为 numeric 浮点型，规避各种数据库特殊驱动返回 object 的情况
+        df_merged['total_mv'] = pd.to_numeric(df_merged['total_mv'], errors='coerce').fillna(0.0)
+        df_merged['revenue'] = pd.to_numeric(df_merged['revenue'], errors='coerce').fillna(0.0)
+        df_merged['net_profit'] = pd.to_numeric(df_merged['net_profit'], errors='coerce').fillna(0.0)
+        df_merged['roe'] = pd.to_numeric(df_merged['roe'], errors='coerce').fillna(0.0)
+        df_merged['industry'] = df_merged['industry'].fillna('未知').astype(str).str.strip()
+
+        # 5. 行业分组下的多因子极值归一化 (Min-Max Normalization) 算法
+        def min_max_normalize(series):
+            s_min = series.min()
+            s_max = series.max()
+            if s_max == s_min:
+                return pd.Series(50.0, index=series.index)
+            return ((series - s_min) / (s_max - s_min)) * 100.0
+
+        # 对各行业内部的四大财务数据分别进行极值转化 (0 ~ 100分)
+        df_merged['mv_score'] = df_merged.groupby('industry')['total_mv'].transform(min_max_normalize)
+        df_merged['rev_score'] = df_merged.groupby('industry')['revenue'].transform(min_max_normalize)
+        df_merged['prof_score'] = df_merged.groupby('industry')['net_profit'].transform(min_max_normalize)
+        df_merged['roe_score'] = df_merged.groupby('industry')['roe'].transform(min_max_normalize)
+
+        # 加权合成行业地位分 (规模大 35% + 营收 30% + 利润 20% + ROE 15%)
+        df_merged['industry_status_score'] = (
+            df_merged['mv_score'] * 0.35 +
+            df_merged['rev_score'] * 0.30 +
+            df_merged['prof_score'] * 0.20 +
+            df_merged['roe_score'] * 0.15
+        )
+
+        # 行业内排名与成分股总数
+        df_merged['ind_mv_rank'] = df_merged.groupby('industry')['total_mv'].rank(ascending=False, method='min').astype(int)
+        df_merged['ind_stock_count'] = df_merged.groupby('industry')['ts_code'].transform('count').astype(int)
+        df_merged['ind_max_mv'] = df_merged.groupby('industry')['total_mv'].transform('max')
+        df_merged['ind_mv_ratio'] = (df_merged['total_mv'] / df_merged['ind_max_mv'].replace(0, 1.0)).round(4)
+
+        # 6. 获取监控概念池
         concept_map = {}
         try:
             sql_pool = text("SELECT concept_name FROM monitor_pool_concept")
@@ -66,16 +280,17 @@ class FactorCalculator:
                 df_rel = self._get_data(sql_rel)
                 if not df_rel.empty:
                     df_rel['concept_name'] = df_rel['concept_name'].astype(str).str.strip()
-                    # 聚合成字典：ts_code -> [概念1, 概念2...]
                     concept_map = df_rel.groupby('ts_code')['concept_name'].apply(list).to_dict()
         except Exception as e:
             logging.error(f"加载监控概念用于打分时失败: {e}")
 
-        # 3. 计算评分与拼接概念
-        updates = []
-        for _, row in df.iterrows():
-            code = row['ts_code']
-            c = row['close']
+        # 7. 逐股结合技术指标与多维度行业地位，合成最终总分
+        calculated_records = []
+        updates_for_daily = []
+        
+        for row in df_merged.itertuples(index=False):
+            code = row.ts_code
+            c = row.close
             if pd.isna(c) or c == 0: continue
             
             score = 0.0
@@ -86,7 +301,7 @@ class FactorCalculator:
             score += float(len(my_concepts) * 1.0)
 
             # --- 规则2：市值偏好 ---
-            mv = row['total_mv']
+            mv = row.total_mv
             if pd.notnull(mv):
                 mv_100m = mv / 10000 
                 if mv_100m < 50: score += 1.0
@@ -95,9 +310,9 @@ class FactorCalculator:
                 else: score += 0.5
 
             # --- 规则3：均线多头打分 ---
-            m5 = row['ma_5']
-            m10 = row['ma_10']
-            m20 = row['ma_20']
+            m5 = row.ma_5
+            m10 = row.ma_10
+            m20 = row.ma_20
             if pd.notnull(m5) and pd.notnull(m10) and pd.notnull(m20):
                 if c > m5 and m5 > m10 and m10 > m20:
                     score += 1.0
@@ -107,42 +322,79 @@ class FactorCalculator:
                     score += 0.4
 
             # --- 规则4：换手率偏好 ---
-            to = row['turnover_rate']
+            to = row.turnover_rate
             if pd.notnull(to):
                 if 5 < to <= 20: score += 1.0
                 elif to > 20: score += 0.6
                 else: score += 0.3
 
-            # --- 封顶 10 分 ---
+            # --- 规则5：基本面行业地位分加权叠加 ---
+            # 我们将上述专业算法算出的“行业地位分 (0~100)”进行线性折算，折合权重为 2.0 分
+            status_bonus = (row.industry_status_score / 100.0) * 2.0
+            score += status_bonus
+
+            # 统一封顶 10 分
             final_score = round(min(score, 10.0), 1)
 
-            updates.append({
+            calculated_records.append({
+                'trade_date': date,
+                'ts_code': code,
+                'stock_name': row.stock_name,
+                'industry': row.industry,
+                'total_mv': float(mv),
+                'total_score': final_score,
+                'ind_mv_rank': int(row.ind_mv_rank),
+                'ind_stock_count': int(row.ind_stock_count),
+                'ind_mv_ratio': float(row.ind_mv_ratio),
+                'concept_str': concept_str_val
+            })
+
+            updates_for_daily.append({
                 'b_score': final_score,
                 'b_cstr': concept_str_val,
                 'b_date': date,
                 'b_code': code
             })
 
+        if not calculated_records:
+            return
 
-        # 4. 极速方案：借助临时表连表更新 (强制类型对齐版)
-        if updates:
-            df_updates = pd.DataFrame(updates)
+        # 8. 计算全市综合排名 (排序规则：分数降序为主，若分数相同按市值降序)
+        df_rank_save = pd.DataFrame(calculated_records)
+        df_rank_save = df_rank_save.sort_values(by=['total_score', 'total_mv'], ascending=[False, False]).reset_index(drop=True)
+        df_rank_save['overall_rank'] = df_rank_save.index + 1  # 综合排名从1开始
+
+        # 9. 写入 daily_rankings 表
+        try:
+            # 市值转换为 “亿元”
+            df_rank_save['total_mv'] = (df_rank_save['total_mv'] / 10000).round(2)
+            df_rank_save['processed_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+            # 剔除概念字段以符合排名表结构
+            df_rank_db = df_rank_save.drop(columns=['concept_str'])
+
+            with self.db.get_engine().begin() as conn:
+                conn.execute(text(f"DELETE FROM daily_rankings WHERE trade_date = '{date}'"))
+                df_rank_db.to_sql('daily_rankings', conn, index=False, if_exists='append')
+            logging.info(f"成功将 {len(df_rank_db)} 只股票的多因子地位及综合排名写入 daily_rankings 表。")
+        except Exception as e:
+            logging.error(f"保存每日排名数据到 daily_rankings 失败: {e}")
+
+        # 10. 极速连表回写 daily_data 表中的评分与概念
+        if updates_for_daily:
+            df_updates = pd.DataFrame(updates_for_daily)
             temp_table = 'temp_update_factors'
             try:
                 with self.db.get_engine().begin() as conn:
-                    # 1. 使用严格的数据类型，防止 MySQL 将字符串误认为 TEXT 导致全表扫描
                     dtype_mapping = {
-                        'b_score': Float(),
-                        'b_cstr': String(255),
-                        'b_date': String(20),
-                        'b_code': String(20)
+                        'b_score': SQLFloat(),
+                        'b_cstr': SQLString(255),
+                        'b_date': SQLString(20),
+                        'b_code': SQLString(20)
                     }
                     df_updates.to_sql(temp_table, conn, index=False, if_exists='replace', dtype=dtype_mapping)
-                    
-                    # 2. 为临时表添加主键索引，确保匹配速度达到毫秒级
                     conn.execute(text(f"ALTER TABLE {temp_table} ADD PRIMARY KEY (b_date, b_code)"))
                     
-                    # 3. 连表更新 (现在两边都是 VARCHAR 且有索引，瞬间完成)
                     update_sql = text(f"""
                         UPDATE daily_data d
                         INNER JOIN {temp_table} t 
@@ -150,13 +402,10 @@ class FactorCalculator:
                         SET d.total_score = t.b_score, d.concept_str = t.b_cstr
                     """)
                     conn.execute(update_sql)
-                    
-                    # 4. 阅后即焚
                     conn.execute(text(f"DROP TABLE IF EXISTS {temp_table}"))
-                    
-                logging.info(f"极速更新完成！成功将 {len(updates)} 只股票的评分与概念回写至 daily_data 库。")
+                logging.info(f"极速更新完成！评分与概念已成功回写至 daily_data 库。")
             except Exception as e:
-                logging.error(f"极速批量更新分数失败: {e}")
+                logging.error(f"批量更新 daily_data 评分与概念失败: {e}")
 
 
     # ==========================
@@ -265,7 +514,6 @@ class FactorCalculator:
 
     def calculate_strict_streaks(self, date):
         logging.info(f"正在计算 {date} 的连板高度...")
-        # 【修改】加上提取 total_score 和 concept_str
         sql = text(f"SELECT ts_code, stock_name, pct_chg, close, industry, turnover_rate, total_mv, area, market, vol, amount, total_score, concept_str FROM daily_data WHERE trade_date = '{date}'")
         df_today = self._get_data(sql)
         if df_today.empty: return {}, pd.DataFrame()
@@ -301,15 +549,96 @@ class FactorCalculator:
         df_today['market'] = df_today.apply(lambda x: x['market'] if x['market'] else infer_market(x['ts_code']), axis=1)
         return streak_map, df_today
 
-    def calculate_sentiment_score(self, sh_pct, total_amount, up_count, total_count, limit_up_count, high_board, promo_rate=0, vol_change_pct=0, limit_down_count=0):
-        s_vol = 10 if total_amount > 30000 else (8 if total_amount >= 25000 else (7 if total_amount >= 20000 else (4 if total_amount >= 15000 else (2 if total_amount >= 10000 else 0))))
-        s_idx = 10 if sh_pct > 3.0 else (8 if sh_pct >= 2.0 else (6 if sh_pct >= 1.0 else (5 if sh_pct >= 0.0 else (0 if sh_pct >= -1.0 else (-1 if sh_pct >= -2.0 else -5)))))
-        ratio = (up_count / total_count * 100) if total_count > 0 else 0
-        s_up = 10 if ratio >= 90 else (8 if ratio >= 75 else (5 if ratio >= 50 else (2.5 if ratio >= 25 else 0)))
-        s_limit = 10 if limit_up_count >= 120 else (7.5 if limit_up_count >= 80 else (5 if limit_up_count >= 50 else (2.5 if limit_up_count >= 20 else 0)))
-        s_high = 10 if high_board >= 10 else (8 if high_board >= 8 else (6 if high_board >= 5 else (2 if high_board >= 3 else 0)))
-        final_score = s_vol * 6 + s_idx * 1 + s_up * 0.5 + s_limit * 1 + s_high * 1.5
-        return {'total': int(max(0, min(100, final_score)))}
+    def calculate_sentiment_score(self, sh_pct, total_amount, up_count, total_count, limit_up_count, high_board, 
+                                      sh_close=0, sh_ma5=0, sh_ma10=0, sh_ma20=0,
+                                      promo_rate=0, vol_change_pct=0, limit_down_count=0):
+            """
+            [量能统治版情绪分算法] 将成交量权重提升至 40%，实现放量即活跃、有成交量就有高分的逻辑，总分上限 100 分。
+            """
+            # 1. 交易额因子 (s_vol) - 量能即生命线，权重系数拉满至 4.0 (最高直接贡献 40 分)
+            s_vol = 10 if total_amount >= 35000 else (
+                9 if total_amount >= 30000 else (
+                    8 if total_amount >= 25000 else (
+                        7 if total_amount >= 20000 else (
+                            5 if total_amount >= 15000 else (
+                                2 if total_amount >= 10000 else 0
+                            )
+                        )
+                    )
+                )
+            )
+
+            # 2. 均线趋势因子 (s_avg) - 权重系数下调至 1.0 (最高 10 分)
+            s_avg = 0.0
+            if sh_close > 0 and sh_ma5 > 0 and sh_ma10 > 0 and sh_ma20 > 0:
+                # A. 均线多头排列且价格在 5 日线之上 
+                if sh_close >= sh_ma5 and sh_ma5 > sh_ma10 and sh_ma10 > sh_ma20:
+                    s_avg = 10.0
+                # B. 均线多头排列，价格合理回踩 5 日至 10 日线之间
+                elif sh_ma5 > sh_close >= sh_ma10 and sh_ma10 > sh_ma20:
+                    s_avg = 8.0
+                # C. 价格全线上穿 5, 10, 20 日线，但均线金叉还未完全对齐
+                elif sh_close >= sh_ma5 and sh_close >= sh_ma10 and sh_close >= sh_ma20:
+                    s_avg = 7.0
+                # D. 仅守住 20 日生命线 (中期安全防线)
+                elif sh_close >= sh_ma20:
+                    s_avg = 5.0
+                # E. 价格在 5 日线之上开始反弹
+                elif sh_close >= sh_ma5:
+                    s_avg = 3.0
+                # F. 空头压制
+                else:
+                    s_avg = 0.0
+
+            # 3. 指数涨跌因子 (s_idx) - 去除负值影响，范围 (0 ~ 10分)，权重系数 1.0 (最高 10 分)
+            s_idx = 10 if sh_pct >= 3.0 else (
+                9 if sh_pct >= 2.0 else (
+                    8 if sh_pct >= 1.0 else (
+                        7 if sh_pct >= 0.5 else (
+                            6 if sh_pct >= 0.0 else (
+                                4 if sh_pct >= -0.5 else (
+                                    2 if sh_pct >= -1.0 else (
+                                        1 if sh_pct >= -2.0 else 0
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+            
+            # 4. 上涨家数占比因子 (s_up) - 赚钱效应核心，权重系数 2.0 (最高 20 分)
+            ratio = (up_count / total_count * 100) if total_count > 0 else 0
+            s_up = 10 if ratio >= 90 else (8 if ratio >= 75 else (5 if ratio >= 50 else (2.5 if ratio >= 25 else 0)))
+            
+            # 5. 涨停家数因子 (s_limit) - 权重系数下调至 0.5 (最高 5 分)
+            s_limit = 10 if limit_up_count >= 120 else (7.5 if limit_up_count >= 80 else (5 if limit_up_count >= 50 else (2.5 if limit_up_count >= 20 else 0)))
+            
+            # 6. 跌停家数因子 (s_limit_d) - 权重系数下调至 0.5 (最高 5 分)
+            s_limit_d = 10 if limit_down_count < 5 else (
+                8 if limit_down_count < 15 else (
+                    6 if limit_down_count < 30 else (
+                        4 if limit_down_count < 50 else (
+                            2 if limit_down_count < 80 else 0
+                        )
+                    )
+                )
+            )
+
+            # 7. 最高连板因子 (s_high) - 阶梯平滑，权重系数 1.0 (最高 10 分)
+            s_high = 10 if high_board >= 7 else (
+                8 if high_board >= 5 else (
+                    6 if high_board >= 4 else (
+                        4 if high_board >= 3 else 0
+                    )
+                )
+            )
+            
+            # 按照“量能统治版”权重合成总分：
+            # 情绪分 = (s_vol * 4) + (s_avg * 1) + (s_idx * 1) + (s_up * 2) + (s_limit * 0.5) + (s_limit_d * 0.5) + (s_high * 1)
+            final_score = (s_vol * 4) + (s_avg * 1) + (s_idx * 1) + (s_up * 2) + (s_limit * 0.5) + (s_limit_d * 0.5) + (s_high * 1)
+            
+            return {'total': int(max(0, min(100, final_score)))}
 
     def get_trend_history(self, current_date, pro_api=None):
         logging.info("🚀 正在计算历史连板趋势 (扩展为30日)...")
@@ -347,7 +676,6 @@ class FactorCalculator:
             if date not in target_dates and date < target_dates[0]:
                 day_raw = df_all[df_all['trade_date'] == date]
                 prev_amount = (day_raw['amount'].sum() if not day_raw.empty else 0) / 100000
-                # prev_limit_ups = set(df_clean[df_clean['trade_date'] == date][df_clean['is_limit'] == 1]['ts_code'])
                 prev_limit_ups = set(df_clean[(df_clean['trade_date'] == date) & (df_clean['is_limit'] == 1)]['ts_code'])
                 continue
                 
