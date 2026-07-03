@@ -463,8 +463,20 @@ class StockDataUpdater:
             logger.error(f"概念数据写入失败: {e}")
 
     def update_concepts_wencai(self):
-        """全量更新同花顺问财概念数据"""
-        logger.info("=== 开始更新概念板块 (Source: Wencai) ===")
+        """
+        全量更新/增量覆盖同花顺问财概念数据 (已集成：代理直连绕过 + 股票级局部安全覆盖逻辑)
+        """
+        logger.info("=== 开始更新概念板块 (Source: Wencai - 智能覆盖版) ===")
+        
+        # 1. 强行屏蔽代理环境变量，防止 VPN 干扰同花顺接口
+        import os
+        for key in ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy', 'https_proxy', 'all_proxy']:
+            os.environ[key] = ''
+        os.environ['NO_PROXY'] = '*'
+        os.environ['no_proxy'] = '*'
+        
+        pd.options.mode.chained_assignment = None
+
         if not HAS_WENCAI:
             logger.error("❌ 未检测到 pywencai 库，无法更新概念。请运行: pip install pywencai pandas")
             return
@@ -509,16 +521,203 @@ class StockDataUpdater:
             
             df_final = df_final.drop_duplicates(subset=['ts_code', 'concept_name'])
             
-            logger.info(f"解析完成，共 {len(df_final)} 条概念映射关系，准备全量写入...")
+            fetched_stocks = df_final['ts_code'].unique().tolist()
+            logger.info(f"解析完成，共获取到 {len(df_final)} 条概念映射关系，涉及 {len(fetched_stocks)} 只个股。")
 
-            with self.engine.begin() as conn:
-                conn.execute(text("TRUNCATE TABLE concept_detail"))
-                df_final.to_sql('concept_detail', conn, index=False, if_exists='append', chunksize=5000)
-            
-            logger.info("✅ 概念数据更新成功！")
+            # 2. 获取数据库中当前的记录行数，用于比对
+            try:
+                with self.engine.connect() as conn:
+                    before_count = conn.execute(text("SELECT COUNT(*) FROM concept_detail")).scalar()
+            except Exception:
+                before_count = 0
+
+            # 3. 智能覆盖机制：不再 TRUNCATE，只删除本次成功获取到的股票的历史数据
+            if len(fetched_stocks) > 0:
+                logger.info("准备安全写入数据库 (增量覆盖模式)...")
+                try:
+                    with self.engine.begin() as conn:
+                        # 批量分段删除已拉取股票的旧映射（分批以防代码过多导致 SQL 超长报错）
+                        batch_size = 500
+                        for i in range(0, len(fetched_stocks), batch_size):
+                            batch = fetched_stocks[i : i + batch_size]
+                            codes_str = "'" + "','".join(batch) + "'"
+                            conn.execute(text(f"DELETE FROM concept_detail WHERE ts_code IN ({codes_str})"))
+                        
+                        # 追加写入新拉取到的关联数据
+                        df_final.to_sql('concept_detail', conn, index=False, if_exists='append', chunksize=5000)
+                    
+                    # 4. 计算写入后的最新汇总信息
+                    with self.engine.connect() as conn:
+                        after_count = conn.execute(text("SELECT COUNT(*) FROM concept_detail")).scalar()
+                        unique_stocks = conn.execute(text("SELECT COUNT(DISTINCT ts_code) FROM concept_detail")).scalar()
+                    
+                    logger.info(f"✅ 概念数据增量覆盖成功！")
+                    logger.info(f"📊 数据库原有关系数：{before_count} 条 -> 最新关系数：{after_count} 条。")
+                    logger.info(f"📊 数据库当前具有概念映射关系的个股数：{unique_stocks} 只。")
+                except Exception as e:
+                    logger.error(f"安全覆盖写入数据库失败: {e}")
+            else:
+                logger.warning("未获取到任何有效的个股，本次未对数据库进行写入操作。")
 
         except Exception as e:
             logger.error(f"概念更新失败: {e}")
+
+
+    # def update_concepts_wencai(self):
+    #     """
+    #     更新概念板块数据 (断点续传补全版：强力代理绕过 + 自动断点补全 + 失败重试)
+    #     """
+    #     logger.info("=== 开始更新概念板块 (已自动切换至 AkShare 智能补全模式) ===")
+        
+    #     # 1. 强行屏蔽代理环境变量，防止 VPN 干扰
+    #     import os
+    #     for key in ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy', 'https_proxy', 'all_proxy']:
+    #         os.environ[key] = ''
+    #     os.environ['NO_PROXY'] = '*'
+    #     os.environ['no_proxy'] = '*'
+        
+    #     pd.options.mode.chained_assignment = None
+
+    #     try:
+    #         import akshare as ak
+    #     except ImportError:
+    #         logger.error("❌ 未检测到 akshare 库，无法更新概念。请运行: pip install akshare")
+    #         return
+
+    #     try:
+    #         logger.info("正在获取全市场概念板块列表...")
+    #         df_concepts = None
+    #         for attempt in range(3):
+    #             try:
+    #                 df_concepts = ak.stock_board_concept_name_em()
+    #                 if df_concepts is not None and not df_concepts.empty:
+    #                     break
+    #             except Exception as e:
+    #                 if attempt == 2: raise e
+    #                 time.sleep(1.5)
+            
+    #         if df_concepts is None or df_concepts.empty:
+    #             logger.warning("获取概念板块列表为空")
+    #             return
+
+    #         all_concept_names = df_concepts['板块名称'].tolist()
+            
+    #         # 2. 读取本地数据库已成功保存的概念，实现【断点续传 / 缺啥补啥】
+    #         existing_concepts = []
+    #         try:
+    #             with self.engine.connect() as conn:
+    #                 # 检查表是否存在且有数据
+    #                 insp = inspect(self.engine)
+    #                 if insp.has_table('concept_detail'):
+    #                     res_df = pd.read_sql("SELECT DISTINCT concept_name FROM concept_detail", conn)
+    #                     if not res_df.empty:
+    #                         existing_concepts = res_df['concept_name'].tolist()
+    #         except Exception as e:
+    #             logger.warning(f"尝试读取已有概念缓存失败 (将进行全量更新): {e}")
+
+    #         # 过滤出未成功获取的缺失概念
+    #         concept_names = [c for c in all_concept_names if c not in existing_concepts]
+            
+    #         if not concept_names:
+    #             logger.info("🎉 检查完成！数据库中的概念数据已经是 100% 完整状态，无需任何补全。")
+    #             return
+
+    #         if len(existing_concepts) > 0:
+    #             logger.info(f"📊 检测到数据库中已存在 {len(existing_concepts)} 个概念。")
+    #             logger.info(f"🔍 本次将开启【智能补全模式】，仅针对缺失的 {len(concept_names)} 个概念进行精准修补...")
+    #         else:
+    #             logger.info(f"📊 本地无缓存，将开启【全新全量同步】，共需处理 {len(concept_names)} 个概念板块...")
+
+    #         all_relations = []
+    #         total = len(concept_names)
+    #         success_count = 0
+
+    #         for idx, name in enumerate(concept_names, 1):
+    #             df_cons = pd.DataFrame()
+                
+    #             # 3. 单板块抓取失败重试逻辑 (3次机会)
+    #             max_retries = 3
+    #             is_success = False
+    #             for attempt in range(max_retries):
+    #                 try:
+    #                     df_cons = ak.stock_board_concept_cons_em(symbol=name)
+    #                     is_success = True
+    #                     break 
+    #                 except Exception as e:
+    #                     if attempt < max_retries - 1:
+    #                         sleep_time = 2.0 * (attempt + 1)
+    #                         time.sleep(sleep_time)
+    #                     else:
+    #                         logger.warning(f"⚠️ 概念 [{name}] 成分股在重试 {max_retries} 次后仍失败 (此概念本次跳过，下次运行可继续补全): {e}")
+
+    #             if not is_success or df_cons.empty:
+    #                 continue
+                
+    #             success_count += 1
+    #             try:
+    #                 for _, row in df_cons.iterrows():
+    #                     code = str(row['代码']).strip().zfill(6)
+    #                     if code.startswith('6'):
+    #                         ts_code = f"{code}.SH"
+    #                     elif code.startswith(('0', '3')):
+    #                         ts_code = f"{code}.SZ"
+    #                     elif code.startswith(('8', '4', '9')):
+    #                         ts_code = f"{code}.BJ"
+    #                     else:
+    #                         ts_code = code
+
+    #                     all_relations.append({
+    #                         'ts_code': ts_code,
+    #                         'stock_name': row.get('名称', row.get('股票简称', '-')),
+    #                         'concept_name': name,
+    #                         'src': 'akshare',
+    #                         'processed_time': datetime.now()
+    #                     })
+                    
+    #                 if idx % 20 == 0 or idx == total:
+    #                     logger.info(f"进度: {idx}/{total} - 正在补全: {name}, 本次累计新增映射: {len(all_relations)}")
+                    
+    #                 time.sleep(0.08)
+    #             except Exception as e:
+    #                 logger.warning(f"解析概念 [{name}] 成分股异常: {e}")
+
+    #         if not all_relations:
+    #             logger.info("ℹ️ 本轮未能成功新增任何板块。如果 VPN 仍旧干扰严重，可尝试暂时关闭 VPN 客户端后重试。")
+    #             return
+
+    #         df_final = pd.DataFrame(all_relations).drop_duplicates(subset=['ts_code', 'concept_name'])
+            
+    #         # 4. 安全追加写入数据库 (非 TRUNCATE 模式，实现幂等局部更新)
+    #         logger.info(f"准备将本次成功补全的 {success_count} 个概念（共 {len(df_final)} 条个股映射）追加写入数据库...")
+            
+    #         try:
+    #             with self.engine.begin() as conn:
+    #                 # 如果是全量更新（原本表为空），直接清空；如果是断点补全，则只删除本次要写入的这些概念名，防止重复
+    #                 if len(existing_concepts) == 0:
+    #                     conn.execute(text("TRUNCATE TABLE concept_detail"))
+    #                 else:
+    #                     names_to_delete = df_final['concept_name'].unique().tolist()
+    #                     names_str = "'" + "','".join([n.replace("'", "\\'") for n in names_to_delete]) + "'"
+    #                     conn.execute(text(f"DELETE FROM concept_detail WHERE concept_name IN ({names_str})"))
+                    
+    #                 df_final.to_sql('concept_detail', conn, index=False, if_exists='append', chunksize=5000)
+                
+    #             # 重新计算最新状态
+    #             with self.engine.connect() as conn:
+    #                 final_count = conn.execute(text("SELECT COUNT(DISTINCT concept_name) FROM concept_detail")).scalar()
+                
+    #             logger.info(f"✅ 概念数据更新/补全成功！当前数据库已完整拥有 {final_count}/{len(all_concept_names)} 个概念板块数据。")
+                
+    #             if final_count < len(all_concept_names):
+    #                 logger.warning(f"💡 提示：目前还有 {len(all_concept_names) - final_count} 个板块因网络原因未获取成功。您无需担心，直接再次执行命令即可，程序会自动检测并继续下载缺失的板块！")
+            
+    #         except Exception as e:
+    #             logger.error(f"写入数据库失败: {e}")
+
+    #     except Exception as e:
+    #         logger.error(f"概念数据同步失败: {e}")
+
+
 
     def init_all_daily_data(self, start_date='20200101'):
         end_date = datetime.now().strftime('%Y%m%d')

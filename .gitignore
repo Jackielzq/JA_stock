@@ -20,6 +20,7 @@ data/cache/
 tmp/
 data/历史交割.xls
 data/input/monitor_pool.local.xlsx
+data/user_only
 
 # Generated outputs
 output/*
@@ -30,3 +31,7 @@ output/*
 Thumbs.db
 *.log
 启动Windows Terminal.lnk
+
+data/操作记录.xlsx
+data/股票错题本.pptx
+data/git说明.txt

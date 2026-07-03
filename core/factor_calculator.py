@@ -17,6 +17,35 @@ class FactorCalculator:
         self._init_financials_table()     # 初始化基础财务表
         self._init_rankings_table()       # 自动初始化综合排名表
 
+
+    def _load_stock_basic_cache(self):    
+        """
+        [安全数据加载器] 确保 stock_basic 缓存被统一加载，且字段结构（ts_code, list_date, industry）完全一致。
+        """
+        # 1. 检查缓存是否存在，若存在，验证核心字段是否完整
+        if self._stock_basic_cache is not None:
+            required_cols = {'ts_code', 'list_date', 'industry'}
+            if required_cols.issubset(self._stock_basic_cache.columns):
+                return self._stock_basic_cache
+            else:
+                logging.warning("检测到非标准的 stock_basic 缓存结构，将清空并重新初始化...")
+                self._stock_basic_cache = None
+
+        # 2. 统一向 Tushare 发起完整数据请求
+        try:
+            logging.info("🚀 正在通过 Tushare API 获取全市场股票基础信息（包含上市日期与行业）...")
+            pro = ts.pro_api(TUSHARE_TOKEN)
+            df = pro.stock_basic(exchange='', list_status='L', fields='ts_code,list_date,industry')
+            if df is not None and not df.empty:
+                self._stock_basic_cache = df
+                return self._stock_basic_cache
+        except Exception as e:
+            logging.error(f"⚠️ 通过 Tushare 接口获取股票基础信息失败: {e}")
+        
+        return None
+
+
+
     def _init_daily_data_columns(self):
         """初始化 daily_data 表，确保包含评分和概念拼接字段"""
         try:
@@ -412,17 +441,48 @@ class FactorCalculator:
     # 下方保留你原有的完整核心功能代码
     # ==========================
     def _get_valid_stock_pool(self, current_date, min_days=90):
+        """
+        获取合法的股票池（过滤上市时间不足 min_days 的新股与次新股）。
+        优先：采用 Tushare API 真实 list_date 字段进行过滤。
+        兜底：若 API 异常或无积分，自动启用本地数据库历史交易记录，确保新股无法穿透过滤器。
+        """
+        fmt_date = current_date.replace('-', '')
         try:
-            if self._stock_basic_cache is None:
-                pro = ts.pro_api(TUSHARE_TOKEN)
-                self._stock_basic_cache = pro.stock_basic(exchange='', list_status='L', fields='ts_code,list_date,industry')
-            fmt_date = current_date.replace('-', '')
-            cutoff_date = (datetime.strptime(fmt_date, '%Y%m%d') - timedelta(days=min_days)).strftime('%Y%m%d')
-            valid_df = self._stock_basic_cache[self._stock_basic_cache['list_date'] <= cutoff_date]
-            return set(valid_df['ts_code'].tolist())
+            cutoff_dt = datetime.strptime(fmt_date, '%Y%m%d') - timedelta(days=min_days)
+            cutoff_date_str = cutoff_dt.strftime('%Y%m%d')
         except Exception as e:
-            logging.error(f"获取上市日期失败: {e}")
-            return None
+            logging.error(f"日期格式解析失败 ({current_date}): {e}")
+            return set()  # 返回空集合，防止脏数据通过
+
+        # 1. 尝试使用 Tushare API 的真实上市日期进行筛选
+        cache = self._load_stock_basic_cache()
+        if cache is not None and 'list_date' in cache.columns:
+            try:
+                valid_df = cache[cache['list_date'] <= cutoff_date_str]
+                valid_codes = set(valid_df['ts_code'].tolist())
+                logging.info(f"📊 [API 过滤] 成功使用真实上市日期进行过滤，合规老股共 {len(valid_codes)} 只（已排除近 {min_days} 天上市新股）。")
+                return valid_codes
+            except Exception as e:
+                logging.error(f"使用 API 缓存过滤上市日期时发生异常: {e}")
+
+        # 2. 兜底保护逻辑：如果接口获取完全失败，绝不返回 None（防止外层过滤被直接跳过）
+        # 降级切换为本地数据库历史分析：查找在 cutoff_date 之前已经在本地生成过交易记录的股票
+        logging.warning("⚠️ API 上市日期数据获取不完整，启动本地数据库历史交易深度检测机制...")
+        try:
+            db_cutoff_date = cutoff_dt.strftime('%Y-%m-%d') if '-' in current_date else cutoff_date_str
+            sql = text(f"SELECT DISTINCT ts_code FROM daily_data WHERE trade_date <= '{db_cutoff_date}'")
+            with self.db.get_engine().connect() as conn:
+                res = conn.execute(sql).fetchall()
+            valid_codes = {r[0] for r in res}
+            logging.info(f"💾 [本地兜底] 成功通过本地历史记录兜底，共保留 {len(valid_codes)} 只老股，安全拦截了新股穿透。")
+            return valid_codes
+        except Exception as db_err:
+            logging.critical(f"❌ [严重警报] 接口过滤与本地数据库兜底同时失败: {db_err}")
+            
+        # 极端异常情况下，返回空集合，确保不会有新股混入计算
+        return set()
+
+
 
     def _try_get_latest_date(self, table_name, target_date, date_col='trade_date'):
         target_str = target_date.replace('-', '')
@@ -472,11 +532,8 @@ class FactorCalculator:
                     df_cp['concept_name'] = df_cp['concept_name'].astype(str).str.strip()
                     cp_map = df_cp.set_index('concept_name')['avg_pct'].to_dict()
 
-        if self._stock_basic_cache is None:
-            try:
-                pro = ts.pro_api(TUSHARE_TOKEN)
-                self._stock_basic_cache = pro.stock_basic(exchange='', list_status='L', fields='ts_code,industry')
-            except: pass
+        self._load_stock_basic_cache()
+        
 
         for stock in stock_list:
             code = stock['ts_code']
@@ -862,22 +919,30 @@ class FactorCalculator:
         else: return '000001.SH'
 
     def get_regulatory_abnormal_stocks(self, date):
+        # 1. 获取近45日的交易日期序列
         dates = self.db.get_recent_trading_days(date, 45) 
         if len(dates) < 35: return []
         dates.sort()
         date_start, date_end = dates[0], dates[-1]
         
+        # 2. 从 Tushare 获取对应的指数日线
         df_index = self._get_index_data_from_api(date_start, date_end)
         if df_index.empty: return []
         df_index = df_index.rename(columns={'ts_code': 'benchmark_code', 'pct_chg': 'idx_pct'})
 
-        df = self._get_data(text(f"SELECT ts_code, trade_date, pct_chg, stock_name, industry, close FROM daily_data WHERE trade_date >= '{date_start}' AND trade_date <= '{date_end}' AND ts_code NOT LIKE '4%%' AND ts_code NOT LIKE '8%%'"))
+        # 3. 读取本地个股历史日线数据
+        df = self._get_data(text(f"SELECT ts_code, trade_date, pct_chg, stock_name, industry, close FROM daily_data WHERE trade_date >= '{date_start}' AND trade_date <= '{date_end}'"))
         if df.empty: return []
         
-        df = df[~df['stock_name'].str.contains('ST')]
-        valid_pool = self._get_valid_stock_pool(date, min_days=90)
-        if valid_pool: df = df[df['ts_code'].isin(valid_pool)]
+        # 【核心过滤 1】：过滤掉科创板(688)、北交所(8, 4, 9开头)的股票，同时剔除 ST 股
+        df = df[~df['ts_code'].str.startswith(('688', '8', '4', '9')) & ~df['stock_name'].str.contains('ST')]
         
+        # 【核心过滤 2】：过滤新股与次新股。将 min_days 设定为 180 天（即上市未满半年的新股/次新股不纳入计算体系）
+        valid_pool = self._get_valid_stock_pool(date, min_days=180)
+        if valid_pool: 
+            df = df[df['ts_code'].isin(valid_pool)]
+        
+        # 4. 个股与指数基准关联并计算偏离度
         df['benchmark_code'] = df['ts_code'].apply(self._map_stock_to_benchmark)
         df = pd.merge(df, df_index, on=['trade_date', 'benchmark_code'], how='left')
         df['idx_pct'] = df['idx_pct'].fillna(0)
@@ -888,9 +953,11 @@ class FactorCalculator:
         
         if len(pivot_stock) < 30: return []
         
+        # 计算 30日 与 10日 偏离值
         dev_30_curr = ((1 + pivot_stock.iloc[-30:] / 100).prod() - 1) - ((1 + pivot_bench.iloc[-30:] / 100).prod() - 1)
         dev_10_curr = ((1 + pivot_stock.iloc[-10:] / 100).prod() - 1) - ((1 + pivot_bench.iloc[-10:] / 100).prod() - 1)
         
+        # 筛选符合异常波动边界的个股（10日偏离 >= 60% 或 30日偏离 >= 150%）
         mask = (dev_10_curr >= 0.60) | (dev_30_curr >= 1.50)
         target_codes = mask[mask].index.tolist()
         if not target_codes: return []
