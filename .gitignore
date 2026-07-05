@@ -10,6 +10,7 @@ venv/
 env/
 
 # Local config and secrets
+config/web_settings.json
 config/settings.local.py
 .env
 .env.*

@@ -27,3 +27,6 @@ argparse
 
 # 安装命令：pip install -r requirements.txt
 # 注意：安装后需要执行 playwright install 来安装浏览器
+
+# Web 服务
+flask

@@ -258,7 +258,7 @@ class StrategyEngine:
             # 2、连续三天上涨 (最低价逐渐升高、最高价逐渐升高)
             # 3、当天收盘价突破半年(60日)新高
             # 4、近三天无涨停
-            # 5、市值小于300亿 (total_mv单位为万元，300亿=3,000,000万)
+            # 5、市值小于800亿 (total_mv单位为万元，300亿=3,000,000万)
             # 6、股价不高于60
             # 7、半年内(120日)涨停次数不超过4次
             # 8、当日换手率大于5%
@@ -266,7 +266,7 @@ class StrategyEngine:
             # ===================================================
             if total_days >= 120:
                 limit_pct = 12.0 if is_startup else 7.0
-                if turnover > 5.0 and total_mv <= 3000000 and close <= 60.0 and pct_chg <= limit_pct:
+                if turnover > 5.0 and total_mv <= 8000000 and close <= 60.0 and pct_chg <= limit_pct:
                     d_t0 = hist_full.iloc[-1]
                     d_t1 = hist_full.iloc[-2]
                     d_t2 = hist_full.iloc[-3]

@@ -8,7 +8,7 @@
 - **内容分散**，大盘、板块、个股、异动、新闻、选股策略、效果回测等，可以通过一个简单的HTML页面将内容快速呈现
 - **便于分享**，可以支持将这些结果快速通过邮件、在线部署等方式分享给相关的朋友
 
-这个项目不是通用 Web 平台，而是一个以 **Python 脚本调度 + 数据库驱动 + HTML/PDF 报告输出** 为核心的分析工作流。
+这个项目不是通用 Web 平台，而是一个以 **Python 脚本调度 + 数据库驱动 + HTML/PDF 报告输出** 为核心的分析工作流；同时提供 **Web 控制台** 来简化日常操作和配置管理。
 
 ## 核心能力
 
@@ -32,6 +32,13 @@
   - 从 Excel 维护股票池和概念池
   - 根据Excel中重点监控的个股和概念生成单独的监控页
 
+- **Web 控制台（v2 新增）**
+  - 可视化操作界面，一键执行所有分析流程
+  - 在线管理数据库、邮件、LLM、GitHub 等全部配置
+  - 可视化编辑监控池（股票/概念增删改查、批量导入、拖拽排序）
+  - 在线浏览历史报告（复盘、选股、回测、监控）
+  - 实时日志输出，任务状态一目了然
+
 - **结果发布**
   - 输出 HTML / PDF
   - 支持邮件发送
@@ -42,7 +49,7 @@
 
 结构图见：
 
-- [architecture_diagram.svg](C:/Users/Admin/Nutstore/1/我的坚果云/Stock_data/Stock_data-V8/output/architecture_diagram.svg)
+- [architecture_diagram.svg](output/architecture_diagram.svg)
 
 主流程可以概括为：
 
@@ -58,20 +65,46 @@ Tushare / 财联社 / Excel
   report/templates 渲染
         ↓
   HTML / PDF / GitHub / Hexo / Email
+        ↓
+    Web 控制台（在线查看 & 操作）
 ```
 
 ## 当前目录结构
 
 ```text
 ├─ config/                 # 配置入口与本地配置模板
+│  ├─ __init__.py          #   运行入口，根据环境加载对应配置
+│  ├─ settings.example.py  #   配置示例模板
+│  ├─ settings.local.py    #   本地真实配置（已 gitignore）
+│  └─ web_settings.json    #   Web 控制台统一配置（已 gitignore）
 ├─ core/                   # 核心业务逻辑
+│  ├─ db_engine.py         #   数据库连接、查询、Tushare API
+│  ├─ data_updater.py      #   数据初始化与增量更新
+│  ├─ factor_calculator.py #   市场因子、情绪评分、总分回写
+│  ├─ strategies.py        #   选股策略、回测逻辑
+│  └─ monitor_manager.py   #   监控池数据聚合
 ├─ services/               # 邮件、GitHub、Hexo、新闻等外部服务
+│  ├─ news_service.py      #   财联社新闻抓取 + 大模型筛选
+│  ├─ mail_service.py      #   报告邮件发送
+│  ├─ pdf_service.py       #   HTML 转 PDF
+│  ├─ github_service.py    #   静态页面发布到 GitHub
+│  └─ deploy_hexo.py       #   报告同步到 Hexo
 ├─ report/                 # Jinja2 渲染与 HTML 模板
+│  ├─ renderer.py          #   模板渲染器
+│  └─ templates/           #   各类报告 HTML 模板
 ├─ utils/                  # 工具代码
+│  └─ market_utils.py      #   市场工具函数
+├─ web/                    # Web 控制台前端
+│  ├─ templates/
+│  │  └─ index.html        #   SPA 主页面
+│  └─ static/
+│     ├─ app.js            #   前端逻辑
+│     └─ style.css         #   样式
 ├─ data/
-│  └─ input/
-│     ├─ monitor_pool.sample.xlsx
-│     └─ monitor_pool.local.xlsx
+│  ├─ input/
+│  │  ├─ monitor_pool.sample.xlsx
+│  │  └─ monitor_pool.local.xlsx   # 真实监控池（已 gitignore）
+│  └─ user_only/                   # 个人数据（已 gitignore）
 ├─ output/
 │  ├─ daily_review/
 │  ├─ daily_news/
@@ -79,8 +112,12 @@ Tushare / 财联社 / Excel
 │  ├─ stock_selection/
 │  ├─ backtest/
 │  ├─ pdf/
-│  └─ img/
-├─ main.py
+│  ├─ img/
+│  └─ architecture_diagram.svg
+├─ main.py                  # 命令行入口
+├─ web_server.py            # Web 服务端（Flask）
+├─ web_config_manager.py    # Web 配置管理器
+├─ 启动Web控制台.bat         # Windows 一键启动脚本
 ├─ requirements.txt
 └─ .gitignore
 ```
@@ -100,6 +137,7 @@ pip install -r requirements.txt
 - 运行入口：`config/__init__.py`
 - 示例模板：`config/settings.example.py`
 - 本地真实配置：`config/settings.local.py`
+- Web 配置存储：`config/web_settings.json`（首次启动 Web 控制台自动从 `settings.local.py` 迁移生成）
 
 你需要准备的本地能力包括：
 
@@ -109,12 +147,48 @@ pip install -r requirements.txt
 - 大模型 API Key  /目前我只用了deepseek，主打一个便宜，几块钱用半年
 - 如需发布：GitHub Token / Hexo 本地路径
 
-
-
 ### 3. 准备监控池文件
 
 - `data/input/monitor_pool.local.xlsx`
   - 配置你关注的股票以及概念，monitor方法会对这个清单的内容做一个针对性的分析报告
+
+## Web 控制台（推荐）
+
+Web 控制台提供了比命令行更方便的操作方式，适合日常使用。
+
+### 启动方式
+
+**Windows（一键启动）：**
+双击根目录的 `启动Web控制台.bat`，会自动启动服务并打开浏览器。
+
+**手动启动：**
+```bash
+python web_server.py --port 5000
+```
+
+然后访问 `http://localhost:5000`
+
+**启动参数：**
+- `--port`：服务端口，默认 5000
+- `--host`：监听地址，默认 0.0.0.0（允许局域网访问）
+- `--debug`：开启 Flask 调试模式
+
+### 控制台功能
+
+| 页面 | 功能 |
+|------|------|
+| **首页控制台** | 一键执行：数据更新、每日复盘、监控报告、量化选股、发送邮件、Hexo部署、GitHub发布、全流程自动化 |
+| **配置页** | 可视化编辑数据库、Tushare、邮件、LLM、GitHub 等配置；管理收件人列表（增删改查、启停、排序） |
+| **监控池** | 股票/概念的增删改查、批量导入、拖拽排序、导出 |
+| **报告页** | 在线浏览复盘、选股、回测、监控等历史 HTML 报告 |
+
+### 首次启动说明
+
+首次启动时，系统会自动检测 `config/web_settings.json` 是否存在：
+- 如果不存在，自动从 `config/settings.local.py` 和 `data/input/monitor_pool.local.xlsx` 迁移数据
+- 之后所有配置在 Web 界面修改即可，无需手动编辑文件
+
+> **注意**：`web_settings.json` 包含敏感信息，已加入 `.gitignore`，不会被提交到 GitHub。
 
 ## 常用运行模式
 
@@ -175,7 +249,7 @@ python main.py --mode news
 python main.py --mode select
 ```
 
-做reivew中已经有，此处可单独用作选股策略的实验
+做review中已经有，此处可单独用作选股策略的实验
 
 输出：
 
@@ -300,9 +374,32 @@ python main.py --mode concept
   - `back_test.html`
   - `monitor.html`
 
+### `web/`（v2 新增）
+
+- `web_server.py`
+  - Flask Web 服务端，提供 REST API 和前端页面
+  - 支持一键执行所有分析模式（update / review / select / monitor / email / deploy / github / full）
+  - 实时 SSE 日志流，任务状态追踪
+  - 在线报告浏览服务
+
+- `web_config_manager.py`
+  - 统一配置管理器，以 `config/web_settings.json` 为单一数据源
+  - 支持数据迁移（从旧 `settings.local.py` + Excel → JSON）
+  - 线程安全的读写操作
+
+- `web/templates/index.html`
+  - 单页应用（SPA）主页面
+  - 首页控制台、配置管理、监控池编辑、报告浏览四大模块
+
+- `web/static/`
+  - `app.js`：前端交互逻辑（页面切换、配置CRUD、任务调度、报告加载）
+  - `style.css`：Apple 风格 UI 样式
+
 ## 适合的使用方式
 
 这个项目更适合下面这种节奏：
+
+**命令行方式：**
 
 1. 收盘后执行 `update` （Tushare数据源，每日16:00以后获取）
 2. 生成 `review / news / monitor`
@@ -312,11 +409,29 @@ python main.py --mode concept
    - `deploy`
    - `github`
 
+**Web 控制台方式（推荐日常使用）：**
+
+1. 启动 `python web_server.py --port 5000`
+2. 在首页控制台按需点击执行按钮
+3. 在报告页查看生成结果
+4. 如有配置变更，直接在配置页修改保存
+
+## 配置文件说明
+
+| 文件 | 用途 | 是否上传 |
+|------|------|----------|
+| `config/settings.example.py` | 配置模板，供参考 | ✅ 上传 |
+| `config/settings.local.py` | 命令行模式真实配置 | ❌ gitignore |
+| `config/web_settings.json` | Web 控制台统一配置 | ❌ gitignore |
+| `data/input/monitor_pool.sample.xlsx` | 监控池示例 | ✅ 上传 |
+| `data/input/monitor_pool.local.xlsx` | 真实监控池 | ❌ gitignore |
+
 ## 注意事项
 
 - Tushare 有频率限制，建议在非交易时段执行大批量更新
 - 首次初始化数据量较大，建议预留足够时间和磁盘空间
 - 本地配置和监控池真实文件不要提交到源码仓库
+- `config/web_settings.json` 包含数据库密码、API Key 等敏感信息，请勿上传
 - 历史回测结果仅供研究，不构成投资建议
 
 ## 仓库说明
@@ -325,7 +440,7 @@ python main.py --mode concept
 
 因此：
 
-- 真实本地配置不会上传
+- 真实本地配置不会上传（`settings.local.py` / `web_settings.json`）
 - 真实监控池 Excel 不会上传
 - 日常生成的 HTML / PDF 报告不会上传
 

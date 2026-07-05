@@ -1,0 +1,227 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JA_Stock - 智能量化控制台</title>
+<link rel="stylesheet" href="/static/style.css?v=7">
+</head>
+<body>
+<aside class="sidebar">
+    <div class="sidebar-header">
+        <div class="logo">
+            <svg width="28" height="28" viewBox="0 0 28 28"><rect width="28" height="28" rx="8" fill="#007AFF"/><path d="M7 20L14 6L21 20" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><line x1="10" y1="16" x2="18" y2="16" stroke="white" stroke-width="2"/></svg>
+            <span>JA_Stock</span>
+        </div>
+    </div>
+    <nav class="sidebar-nav">
+        <a class="nav-item active" data-page="home" onclick="switchPage('home')">
+            <svg width="20" height="20" viewBox="0 0 20 20"><path d="M3 8L10 2L17 8V17H3V8Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><rect x="7" y="11" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.5"/></svg>
+            <span>首页控制台</span>
+        </a>
+        <a class="nav-item" data-page="config" onclick="switchPage('config')">
+            <svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="3" stroke="currentColor" stroke-width="1.8"/><path d="M10 1.5V4M10 16V18.5M1.5 10H4M16 10H18.5M3.4 3.4L5.2 5.2M14.8 14.8L16.6 16.6M3.4 16.6L5.2 14.8M14.8 5.2L16.6 3.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            <span>配置</span>
+        </a>
+            <a class="nav-item" data-page="reports" onclick="switchPage('reports')">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="2" width="16" height="16" rx="2" stroke="currentColor" stroke-width="1.8"/><line x1="6" y1="7" x2="14" y2="7" stroke="currentColor" stroke-width="1.5"/><line x1="6" y1="10" x2="14" y2="10" stroke="currentColor" stroke-width="1.5"/><line x1="6" y1="13" x2="10" y2="13" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>报告</span>
+            </a>
+    </nav>
+    <div class="sidebar-footer"><span class="version">v2.0</span></div>
+</aside>
+
+<main class="main-content">
+
+<section class="page active" id="page-home">
+<header class="page-header"><h1>控制台</h1><p class="subtitle">一键执行量化分析工作流</p></header>
+<div class="status-bar">
+    <div class="status-indicator"><span class="status-dot idle"></span><span id="status-text">就绪</span></div>
+    <span class="status-time" id="status-time"></span>
+</div>
+<div class="cmd-grid">
+    <button class="cmd-card" onclick="runTask('update')"><div class="cmd-icon blue"><svg width="24" height="24" viewBox="0 0 24 24"><path d="M21 15V19C21 20.1 20.1 21 19 21H5C3.9 21 3 20.1 3 19V15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><polyline points="7,10 12,15 17,10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="12" y1="15" x2="12" y2="3" stroke="currentColor" stroke-width="2"/></svg></div><div class="cmd-info"><span class="cmd-title">更新数据</span><span class="cmd-desc">从 Tushare 拉取最新行情</span></div></button>
+    <button class="cmd-card" onclick="runTask('review')"><div class="cmd-icon green"><svg width="24" height="24" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/><rect x="14" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/><rect x="3" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/><rect x="14" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/></svg></div><div class="cmd-info"><span class="cmd-title">每日复盘</span><span class="cmd-desc">生成大盘+选股复盘报告</span></div></button>
+    
+    <button class="cmd-card" onclick="runTask('monitor')"><div class="cmd-icon purple"><svg width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="1" fill="currentColor"/><line x1="12" y1="3" x2="12" y2="7" stroke="currentColor" stroke-width="2"/><line x1="12" y1="17" x2="12" y2="21" stroke="currentColor" stroke-width="2"/></svg></div><div class="cmd-info"><span class="cmd-title">监控报告</span><span class="cmd-desc">生成监控池评估报告</span></div></button>
+    <button class="cmd-card" onclick="runTask('select')"><div class="cmd-icon teal"><svg width="24" height="24" viewBox="0 0 24 24"><polyline points="22,12 18,12 15,21 9,3 6,12 2,12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="cmd-info"><span class="cmd-title">量化选股</span><span class="cmd-desc">运行多策略选股模型</span></div></button>
+    <button class="cmd-card" onclick="runTask('email')"><div class="cmd-icon red"><svg width="24" height="24" viewBox="0 0 24 24"><path d="M4 4H20C21.1 4 22 4.9 22 6V18C22 19.1 21.1 20 20 20H4C2.9 20 2 19.1 2 18V6C2 4.9 2.9 4 4 4Z" stroke="currentColor" stroke-width="2"/><polyline points="22,6 12,13 2,6" stroke="currentColor" stroke-width="2"/></svg></div><div class="cmd-info"><span class="cmd-title">发送邮件</span><span class="cmd-desc">推送复盘报告到邮箱</span></div></button>
+    <button class="cmd-card" onclick="runTask('deploy')"><div class="cmd-icon indigo"><svg width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/><path d="M12 1V3M12 21V23M4.22 4.22L5.64 5.64M18.36 18.36L19.78 19.78" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div><div class="cmd-info"><span class="cmd-title">Hexo 部署</span><span class="cmd-desc">同步报告到 Hexo 博客</span></div></button>
+    <button class="cmd-card" onclick="runTask('github')"><div class="cmd-icon gray"><svg width="24" height="24" viewBox="0 0 24 24"><path d="M9 19C4 20.5 4 16.5 2 16M16 22V18C16.1 16.8 15.7 15.6 14.9 14.7C17.9 14.4 21 13.3 21 8.2C20.9 6.6 20.2 5.1 19 4.1C19.4 2.8 19.3 1.4 18.7 0.2C18.7 0.2 17.5 0 15 1.5C12.7 0.9 10.3 0.9 8 1.5C5.5 0 4.3 0.2 4.3 0.2C3.7 1.4 3.6 2.8 4 4.1C2.8 5.1 2.1 6.6 2 8.2C1.7 13.3 5 14.4 8 14.7C7.2 15.6 6.8 16.8 6.9 18V22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="cmd-info"><span class="cmd-title">GitHub 发布</span><span class="cmd-desc">推送到 GitHub Pages</span></div></button>
+</div>
+<div class="full-flow">
+    <button class="btn-full" onclick="runTask('full')"><svg width="20" height="20" viewBox="0 0 20 20"><polygon points="16,10 8,4 8,16" fill="currentColor"/><rect x="4" y="4" width="2" height="12" rx="1" fill="currentColor"/></svg>一键全流程</button>
+    <span class="full-desc">更新 → 复盘 → 监控 → 邮件 → 部署</span>
+</div>
+<div class="log-section">
+    <div class="log-header"><h3>运行日志</h3><button class="btn-clear" onclick="clearLogs()">清空</button></div>
+    <div class="log-output" id="log-output"><div class="log-empty">等待任务执行...</div></div>
+</div>
+</section>
+
+<!-- ==================== 配置页 ==================== -->
+<section class="page" id="page-config">
+<header class="page-header"><h1>配置</h1><p class="subtitle">管理系统各项配置参数</p></header>
+<div class="config-layout">
+    <nav class="config-sidebar">
+        <a class="cfg-nav-item active" data-sub="email-config" onclick="switchSubTab('email-config')">邮件配置</a>
+        <a class="cfg-nav-item" data-sub="recipients-config" onclick="switchSubTab('recipients-config')">推送清单</a>
+        <a class="cfg-nav-item" data-sub="llm-config" onclick="switchSubTab('llm-config')">大模型配置</a>
+        <a class="cfg-nav-item" data-sub="monitor-stocks" onclick="switchSubTab('monitor-stocks')">监控股票</a>
+        <a class="cfg-nav-item" data-sub="monitor-concepts" onclick="switchSubTab('monitor-concepts')">监控概念</a>
+        <a class="cfg-nav-item" data-sub="github-config" onclick="switchSubTab('github-config')">部署配置</a>
+        <a class="cfg-nav-item" data-sub="db-config" onclick="switchSubTab('db-config')">数据库</a>
+        <a class="cfg-nav-item" data-sub="tushare-config" onclick="switchSubTab('tushare-config')">Tushare API</a>
+    </nav>
+
+    <div class="config-content">
+
+        <!-- 邮件配置 -->
+        <div class="sub-page active" id="sub-email-config">
+            <form class="config-form" id="email-form">
+                <div class="form-group"><label>SMTP 服务器</label><input type="text" id="email-smtp-server"></div>
+                <div class="form-row"><div class="form-group flex-1"><label>端口</label><input type="number" id="email-smtp-port"></div><div class="form-group flex-1"><label>发件人</label><input type="email" id="email-sender"></div></div>
+                <div class="form-group"><label>SMTP 授权码</label><input type="password" id="email-password"></div>
+                <div class="form-group"><label>邮件标题前缀</label><input type="text" id="email-subject-prefix"></div>
+                <button type="submit" class="btn-primary">保存配置</button>
+            </form>
+        </div>
+
+        <!-- 推送清单 -->
+        <div class="sub-page" id="sub-recipients-config">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
+                <input type="email" id="new-recipient" placeholder="邮箱地址" class="input-add" style="flex:1;min-width:200px;max-width:300px;">
+                <input type="text" id="new-recipient-remark" placeholder="备注（选填）" class="input-add" style="flex:1;min-width:160px;max-width:220px;">
+                <button class="btn-primary" onclick="addRecipient()">添加</button>
+                <span style="flex:1;min-width:20px;"></span>
+                <button class="btn-secondary" onclick="toggleAllRecipients(true)">全部启用</button>
+                <button class="btn-secondary" onclick="toggleAllRecipients(false)">全部停用</button>
+            </div>
+            <table class="data-table" id="recipients-table">
+                <thead><tr><th class="drag-th"></th><th class="col-email">邮箱</th><th class="col-remark">备注</th><th class="col-status">状态</th><th class="col-actions">操作</th></tr></thead>
+                <tbody><tr><td colspan="4" class="empty-cell">暂无收件人</td></tr></tbody>
+            </table>
+        </div>
+
+        <!-- 大模型配置 -->
+        <div class="sub-page" id="sub-llm-config">
+            <form class="config-form" id="llm-form">
+                <div class="form-group"><label>API Key</label><input type="password" id="llm-api-key"></div>
+                <div class="form-group"><label>API 地址</label><input type="text" id="llm-base-url"></div>
+                <div class="form-row"><div class="form-group flex-1"><label>模型名称</label><input type="text" id="llm-model"></div><div class="form-group flex-2"><label>温度</label><input type="number" id="llm-temperature" step="0.1" min="0" max="2"></div></div>
+                <button type="submit" class="btn-primary">保存配置</button>
+            </form>
+        </div>
+
+        <!-- 监控股票 -->
+        <div class="sub-page" id="sub-monitor-stocks">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
+                <input type="text" id="new-stock-code" placeholder="股票代码" class="input-add" style="flex:1;min-width:120px;max-width:160px;">
+                <input type="text" id="new-stock-name" placeholder="股票名称" class="input-add" style="flex:1;min-width:120px;max-width:160px;">
+                <input type="text" id="new-stock-remark" placeholder="备注" class="input-add" style="flex:2;min-width:180px;max-width:280px;">
+                <button class="btn-primary" onclick="addMonitorStock()">添加</button>
+                <span style="flex:1;min-width:20px;"></span>
+                <button class="btn-secondary" onclick="importMonitorStocks()">批量导入</button>
+                <button class="btn-secondary" onclick="exportMonitor()">导出</button>
+            </div>
+            <table class="data-table" id="stocks-table">
+                <thead><tr><th class="drag-th"></th><th class="col-code">代码</th><th class="col-name">名称</th><th class="col-stock-remark">备注</th><th class="col-stock-actions">操作</th></tr></thead>
+                <tbody><tr><td colspan="4" class="empty-cell">暂无监控股票</td></tr></tbody>
+            </table>
+        </div>
+
+        <!-- 监控概念 -->
+        <div class="sub-page" id="sub-monitor-concepts">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+                <input type="text" id="new-concept" placeholder="概念名称" class="input-add" style="flex:1;min-width:200px;max-width:360px;">
+                <button class="btn-primary" onclick="addMonitorConcept()">添加</button>
+                <span style="flex:1;min-width:20px;"></span>
+                <button class="btn-secondary" onclick="importMonitorConcepts()">批量导入</button>
+                <button class="btn-secondary" onclick="exportMonitor()">导出</button>
+            </div>
+            <table class="data-table" id="concepts-table">
+                <thead><tr><th class="drag-th"></th><th class="col-concept-name">概念名称</th><th class="col-concept-actions">操作</th></tr></thead>
+                <tbody><tr><td colspan="2" class="empty-cell">暂无监控概念</td></tr></tbody>
+            </table>
+        </div>
+
+        <!-- 部署配置 -->
+        <div class="sub-page" id="sub-github-config">
+            <form class="config-form" id="github-form">
+                <div class="form-group"><label>GitHub Token</label><input type="password" id="github-token"></div>
+                <div class="form-row"><div class="form-group flex-1"><label>用户名</label><input type="text" id="github-owner"></div><div class="form-group flex-1"><label>仓库名</label><input type="text" id="github-repo"></div></div>
+                <div class="form-row"><div class="form-group flex-1"><label>分支</label><input type="text" id="github-branch"></div><div class="form-group flex-1"><label>目标路径</label><input type="text" id="github-target-path"></div></div>
+                <button type="submit" class="btn-primary">保存配置</button>
+            </form>
+        </div>
+
+        <!-- 数据库配置 -->
+        <div class="sub-page" id="sub-db-config">
+            <form class="config-form" id="db-form">
+                <div class="form-row"><div class="form-group flex-1"><label>主机</label><input type="text" id="db-host"></div><div class="form-group flex-1"><label>端口</label><input type="number" id="db-port"></div></div>
+                <div class="form-row"><div class="form-group flex-1"><label>用户名</label><input type="text" id="db-user"></div><div class="form-group flex-1"><label>密码</label><input type="password" id="db-password"></div></div>
+                <div class="form-row"><div class="form-group flex-1"><label>数据库</label><input type="text" id="db-database"></div><div class="form-group flex-1"><label>字符集</label><input type="text" id="db-charset"></div></div>
+                <button type="submit" class="btn-primary">保存配置</button>
+            </form>
+        </div>
+
+        <!-- Tushare API -->
+        <div class="sub-page" id="sub-tushare-config">
+            <form class="config-form" id="tushare-form">
+                <div class="form-group"><label>Tushare Token</label><input type="text" id="tushare-token" placeholder="输入你的 Tushare Token"></div>
+                <p style="font-size:13px;color:var(--text-tertiary);margin-bottom:20px;">Token 可在 <a href="https://tushare.pro" target="_blank" style="color:var(--blue)">tushare.pro</a> 注册获取</p>
+                <button type="submit" class="btn-primary">保存配置</button>
+            </form>
+        </div>
+
+    </div>
+</div>
+
+</section>
+
+
+
+
+<!-- ==================== 报告页 ==================== -->
+<section class="page" id="page-reports">
+<header class="page-header"><h1>报告</h1><p class="subtitle">查看历史复盘、选股、回测及监控报告</p></header>
+
+<div class="reports-tabs">
+    <button class="report-tab active" data-rtype="review" onclick="switchReportType('review')">复盘报告</button>
+    <button class="report-tab" data-rtype="selection" onclick="switchReportType('selection')">选股报告</button>
+    <button class="report-tab" data-rtype="backtest" onclick="switchReportType('backtest')">回测报告</button>
+    <button class="report-tab" data-rtype="monitor" onclick="switchReportType('monitor')">监控报告</button>
+</div>
+
+<div class="report-controls">
+    <select id="report-date-select" onchange="loadSelectedReport()" style="padding:8px 14px;border:1px solid var(--border-color);border-radius:var(--radius-sm);font-size:14px;font-family:var(--font);background:var(--bg-secondary);"></select>
+    <button class="btn-primary" onclick="openReportNewTab()" style="margin-left:8px;">在新标签页打开</button>
+</div>
+
+<iframe id="report-frame" class="report-frame" src="" sandbox="allow-same-origin allow-scripts"></iframe>
+</section>
+
+</main>
+
+<!-- 批量导入弹窗 -->
+<div class="modal-overlay" id="modal-import-stocks" onclick="if(event.target===this)closeModal('modal-import-stocks')">
+    <div class="modal-box">
+        <h3>批量导入股票</h3>
+        <p class="modal-hint">每行一条：代码,名称,备注（逗号分隔）</p>
+        <textarea id="import-stocks-text" rows="8" placeholder="SH605358,立昂微,半导体硅片&#10;SZ300093,金刚光伏,"></textarea>
+        <div class="modal-btns"><button class="btn-primary" onclick="doImportStocks()">导入</button><button class="btn-cancel" onclick="closeModal('modal-import-stocks')">取消</button></div>
+    </div>
+</div>
+<div class="modal-overlay" id="modal-import-concepts" onclick="if(event.target===this)closeModal('modal-import-concepts')">
+    <div class="modal-box">
+        <h3>批量导入概念</h3>
+        <p class="modal-hint">每行一个概念名称</p>
+        <textarea id="import-concepts-text" rows="8" placeholder="PCB概念&#10;共封装光学(CPO)&#10;液冷服务器"></textarea>
+        <div class="modal-btns"><button class="btn-primary" onclick="doImportConcepts()">导入</button><button class="btn-cancel" onclick="closeModal('modal-import-concepts')">取消</button></div>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script src="/static/app.js?v=5"></script>
+</body>
+</html>
