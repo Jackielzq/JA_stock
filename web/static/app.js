@@ -143,6 +143,7 @@ function stopStatusPolling() {
     }
 }
 
+// === Enhanced pollStatus with elapsed time ===
 function pollStatus() {
     fetch("/api/status")
         .then(function (r) { return r.json(); })
@@ -152,57 +153,96 @@ function pollStatus() {
             var dot = document.querySelector(".status-dot");
             var txt = byId("status-text");
             var tm = byId("status-time");
+            var taskNames = {
+                update: "数据更新", review: "每日复盘", factor: "因子计算",
+                monitor: "监控报告", select: "量化选股", email: "发送邮件",
+                deploy: "Hexo部署", github: "GitHub发布", full: "全流程"
+            };
 
             if (s.running) {
                 dot.className = "status-dot running";
-                txt.textContent = "执行中: " + s.task;
+                var taskLabel = taskNames[s.task] || s.task;
+                txt.textContent = "执行中: " + taskLabel + (s.elapsed ? " (已用时 " + s.elapsed + ")" : "");
             } else if (s.result === "error") {
                 dot.className = "status-dot error";
-                txt.textContent = "上次任务失败";
+                txt.textContent = "上次任务失败" + (s.elapsed ? " (耗时 " + s.elapsed + ")" : "");
             } else if (s.result === "success") {
                 dot.className = "status-dot idle";
-                txt.textContent = "上一次执行成功";
+                txt.textContent = "上一次执行成功" + (s.elapsed ? " (耗时 " + s.elapsed + ")" : "");
             } else {
                 dot.className = "status-dot idle";
                 txt.textContent = "就绪";
             }
 
-            if (s.logs && s.logs.length > 0) {
-                renderLogs(s.logs);
+            // Always render log area - show state even when empty
+            if (s.logs) {
+                renderLogs(s.logs, s.running, s.task, s.elapsed);
+            } else if (s.running) {
+                renderLogs([], s.running, s.task, s.elapsed);
             }
             if (!s.running) {
                 setButtonsDisabled(false);
-                if (tm) {
-                    tm.textContent = new Date().toLocaleTimeString("zh-CN");
-                }
+            }
+            if (tm) {
+                tm.textContent = new Date().toLocaleTimeString("zh-CN");
             }
         })
         .catch(function () {});
 }
 
-function renderLogs(logs) {
+
+
+
+
+// === Enhanced renderLogs with header + timing ===
+function renderLogs(logs, running, task, elapsed) {
     var el = byId("log-output");
     if (!el) return;
 
-    el.innerHTML = logs.map(function (line) {
+    var taskNames = {
+        update: "数据更新", review: "每日复盘", factor: "因子计算",
+        monitor: "监控报告", select: "量化选股", email: "发送邮件",
+        deploy: "Hexo部署", github: "GitHub发布", full: "全流程"
+    };
+
+    var html = "";
+    if (task) {
+        var taskLabel = taskNames[task] || task;
+        html += '<div class="log-line header">=== ' + taskLabel + (running ? " - 运行中" : " - 已完成") + (elapsed ? " [" + elapsed + "]" : "") + ' ===</div>';
+    }
+
+    if (logs.length === 0 && running) {
+        html += '<div class="log-line info">等待日志输出中...</div>';
+    }
+
+    html += logs.map(function (line) {
         var cls = "log-line";
-        if (line.indexOf("错误") !== -1 || line.indexOf("Error") !== -1 || line.indexOf("失败") !== -1) {
+        if (line.indexOf("ERROR") !== -1 || line.indexOf("错误") !== -1 || line.indexOf("失败") !== -1) {
             cls += " error";
-        }
-        if (line.indexOf("成功") !== -1 || line.indexOf("完成") !== -1) {
+        } else if (line.indexOf("WARNING") !== -1 || line.indexOf("警告") !== -1) {
+            cls += " warn";
+        } else if (line.indexOf("INFO") !== -1 || line.indexOf("成功") !== -1 || line.indexOf("完成") !== -1 || line.indexOf("全部") !== -1) {
             cls += " success";
         }
         return '<div class="' + cls + '">' + escHtml(line) + "</div>";
     }).join("");
 
+    el.innerHTML = html;
     el.scrollTop = el.scrollHeight;
 }
 
+// === Enhanced clearLogs ===
 function clearLogs() {
     var el = byId("log-output");
     if (el) {
         el.innerHTML = '<div class="log-empty">等待任务执行...</div>';
     }
+    var dot = document.querySelector(".status-dot");
+    if (dot) dot.className = "status-dot idle";
+    var txt = byId("status-text");
+    if (txt) txt.textContent = "就绪";
+    var tm = byId("status-time");
+    if (tm) tm.textContent = new Date().toLocaleTimeString("zh-CN");
 }
 
 // ==================== Email Config ====================
