@@ -6,6 +6,7 @@ from flask import Flask, jsonify, request, send_from_directory, send_file, Respo
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from web_config_manager import (
+    import_monitor_from_excel, export_monitor_to_excel,
     get_all, update_all, get_db_config, update_db_config,
     get_email_config, update_email_config,
     get_recipients, add_recipient, remove_recipient, update_recipient,
@@ -281,6 +282,49 @@ def api_export_monitor():
     return Response(json.dumps(pool, ensure_ascii=False, indent=2),
                     mimetype="application/json",
                     headers={"Content-Disposition": "attachment; filename=monitor_pool_export.json"})
+
+@app.route("/api/config/monitor/import-excel", methods=["POST"])
+def api_import_monitor_excel():
+    """从上传的 Excel 文件导入监控池（内存读取，避免文件锁问题）"""
+    if "file" not in request.files:
+        return jsonify({"code": 1, "message": "未上传文件"}), 400
+    file = request.files["file"]
+    if not file.filename.endswith((".xlsx", ".xls")):
+        return jsonify({"code": 1, "message": "请上传 .xlsx 或 .xls 格式文件"}), 400
+    import io
+    try:
+        excel_bytes = io.BytesIO(file.read())
+        result = import_monitor_from_excel(excel_bytes)
+        return jsonify({"code": 0, "data": result, "message": f"导入完成: {result['stocks']} 只股票, {result['concepts']} 个概念"})
+    except Exception as e:
+        return jsonify({"code": 1, "message": str(e)}), 500
+
+@app.route("/api/config/monitor/export-excel")
+def api_export_monitor_excel():
+    """导出监控池为 Excel 文件（内存生成，避免临时文件问题）"""
+    import io
+    import pandas as pd
+    pool = get_monitor_pool()
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        stocks = pool.get("stocks", [])
+        if stocks:
+            df_stock = pd.DataFrame(stocks)
+            df_stock = df_stock.rename(columns={"code": "股票代码", "name": "股票名称", "remark": "备注"})
+            df_stock = df_stock[["股票代码", "股票名称", "备注"]]
+        else:
+            df_stock = pd.DataFrame(columns=["股票代码", "股票名称", "备注"])
+        df_stock.to_excel(writer, sheet_name="stock", index=False)
+        concepts = pool.get("concepts", [])
+        if concepts:
+            df_concept = pd.DataFrame(concepts)
+            df_concept = df_concept.rename(columns={"name": "概念名称"})
+        else:
+            df_concept = pd.DataFrame(columns=["概念名称"])
+        df_concept.to_excel(writer, sheet_name="concept", index=False)
+    output.seek(0)
+    return send_file(output, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                     as_attachment=True, download_name="monitor_pool_export.xlsx")
 
 
 # ====== 任务执行 ======

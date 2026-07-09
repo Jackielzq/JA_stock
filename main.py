@@ -252,9 +252,12 @@ def run_monitor(db, renderer):
     from core.monitor_manager import MonitorPoolManager
     monitor_manager = MonitorPoolManager(db)
 
-    # 2. 如果存在 Excel，则作为配置源同步到数据库
-    monitor_file = MONITOR_POOL_FILE
-    monitor_manager.sync_from_excel(monitor_file)
+    # 2. 优先从 Web 配置同步监控池；若 Web 配置无数据则回退到 Excel
+    synced = monitor_manager.sync_from_web_config()
+    if not synced:
+        logger.info("Web配置监控池为空，尝试从 Excel 同步...")
+        monitor_file = MONITOR_POOL_FILE
+        monitor_manager.sync_from_excel(monitor_file)
 
     # 3. 从数据库中抽取报告所需数据 (不依赖Excel)
     concept_trends, stock_list = monitor_manager.get_monitor_data(latest_date)

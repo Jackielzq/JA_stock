@@ -121,8 +121,8 @@
                 <input type="text" id="new-stock-remark" placeholder="备注" class="input-add" style="flex:2;min-width:180px;max-width:280px;">
                 <button class="btn-primary" onclick="addMonitorStock()">添加</button>
                 <span style="flex:1;min-width:20px;"></span>
-                <button class="btn-secondary" onclick="importMonitorStocks()">批量导入</button>
-                <button class="btn-secondary" onclick="exportMonitor()">导出</button>
+                <button class="btn-secondary" onclick="importMonitorExcel()">批量导入</button>
+                <button class="btn-secondary" onclick="exportMonitorExcel()">导出</button>
             </div>
             <table class="data-table" id="stocks-table">
                 <thead><tr><th class="drag-th"></th><th class="col-code">代码</th><th class="col-name">名称</th><th class="col-stock-remark">备注</th><th class="col-stock-actions">操作</th></tr></thead>
@@ -136,8 +136,8 @@
                 <input type="text" id="new-concept" placeholder="概念名称" class="input-add" style="flex:1;min-width:200px;max-width:360px;">
                 <button class="btn-primary" onclick="addMonitorConcept()">添加</button>
                 <span style="flex:1;min-width:20px;"></span>
-                <button class="btn-secondary" onclick="importMonitorConcepts()">批量导入</button>
-                <button class="btn-secondary" onclick="exportMonitor()">导出</button>
+                <button class="btn-secondary" onclick="importMonitorExcel()">批量导入</button>
+                <button class="btn-secondary" onclick="exportMonitorExcel()">导出</button>
             </div>
             <table class="data-table" id="concepts-table">
                 <thead><tr><th class="drag-th"></th><th class="col-concept-name">概念名称</th><th class="col-concept-actions">操作</th></tr></thead>
@@ -203,25 +203,17 @@
 
 </main>
 
-<!-- 批量导入弹窗 -->
-<div class="modal-overlay" id="modal-import-stocks" onclick="if(event.target===this)closeModal('modal-import-stocks')">
+<!-- Excel 导入弹窗 -->
+<div class="modal-overlay" id="modal-import-excel" onclick="if(event.target===this)closeModal('modal-import-excel')">
     <div class="modal-box">
-        <h3>批量导入股票</h3>
-        <p class="modal-hint">每行一条：代码,名称,备注（逗号分隔）</p>
-        <textarea id="import-stocks-text" rows="8" placeholder="SH605358,立昂微,半导体硅片&#10;SZ300093,金刚光伏,"></textarea>
-        <div class="modal-btns"><button class="btn-primary" onclick="doImportStocks()">导入</button><button class="btn-cancel" onclick="closeModal('modal-import-stocks')">取消</button></div>
-    </div>
-</div>
-<div class="modal-overlay" id="modal-import-concepts" onclick="if(event.target===this)closeModal('modal-import-concepts')">
-    <div class="modal-box">
-        <h3>批量导入概念</h3>
-        <p class="modal-hint">每行一个概念名称</p>
-        <textarea id="import-concepts-text" rows="8" placeholder="PCB概念&#10;共封装光学(CPO)&#10;液冷服务器"></textarea>
-        <div class="modal-btns"><button class="btn-primary" onclick="doImportConcepts()">导入</button><button class="btn-cancel" onclick="closeModal('modal-import-concepts')">取消</button></div>
+        <h3>从 Excel 导入监控池</h3>
+        <p class="modal-hint">请上传 .xlsx 文件，需包含 stock 和 concept 两个 sheet。格式参照原有 Excel 模板。</p>
+        <input type="file" id="import-excel-file" accept=".xlsx,.xls" style="margin:12px 0;">
+        <div class="modal-btns"><button class="btn-primary" onclick="doImportExcel()">导入</button><button class="btn-cancel" onclick="closeModal('modal-import-excel')">取消</button></div>
     </div>
 </div>
 
 <div class="toast" id="toast"></div>
-<script src="/static/app.js?v=8"></script>
+<script src="/static/app.js?v=9"></script>
 </body>
 </html>

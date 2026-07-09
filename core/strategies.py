@@ -37,7 +37,7 @@ class StrategyEngine:
             "策略2",  #分歧弱转强
             "策略3",  #半年天量突破
             "策略4",  #十字星高位整理
-            "策略5"   #长周期双底突破
+            "策略5"   #涨停回踩整理
         ]
 
     def _init_selection_table(self):
@@ -430,38 +430,36 @@ class StrategyEngine:
                                         strategies_hit.append(("策略4", "tag-s4"))
 
             # ===================================================
-            # 策略5（长周期双底突破）：
-            # 1、当日收红 (pct_chg > 0)
-            # 2、当日收盘价创 120 日新高
-            # 3、近 3 日内（T-2, T-1, T）有一次涨停
-            # 4、本次涨停距离上一次涨停相隔半年（120个交易日）以上
-            # 5、这两次涨停的价格（收盘价）差异不超过 20%
+            # 策略5（涨停回踩整理）：
+            # 1、近15个交易日内有涨停
+            # 2、最近3天（T-2, T-1, T）每日涨跌幅在 -4% ~ +4% 之间
+            # 3、近3天的收盘价均在最近一次涨停当日最低价附近（-1.5% ~ +3%）
             # ===================================================
-            if total_days >= 120 and pct_chg > 0:
-                # 创180日新高
-                start_120_idx = max(0, total_days - 121)
-                past_120_max = hist_full.iloc[start_120_idx : total_days - 1]['high'].max()
+            if total_days >= 15:
+                # 1. 近15个交易日内有涨停
+                recent_15_start = max(0, total_days - 15)
+                recent_15_indices = range(recent_15_start, total_days)
+                recent_15_lus = [idx for idx in recent_15_indices if idx in lu_indices]
                 
-                if close > past_120_max:
-                    s5_hit = False
-                    # 近3日内包含的索引范围：[total_days - 3, total_days - 1]
+                if recent_15_lus:
+                    last_lu_idx = recent_15_lus[-1]  # 最近一次涨停
+                    last_lu_low = hist_full.loc[last_lu_idx, 'low']
+                    
+                    # 2. 最近3天（T-2, T-1, T）每日涨跌幅在 -4% ~ +4% 之间
                     recent_3_days_indices = range(total_days - 3, total_days)
-                    for lu_idx1 in recent_3_days_indices:
-                        if lu_idx1 in lu_indices:
-                            # 检索该次涨停之前的历史涨停
-                            prior_lus = [idx for idx in lu_indices if idx < lu_idx1]
-                            if prior_lus:
-                                lu_idx2 = prior_lus[-1]  # 上一次涨停
-                                # 相隔120个交易日以上 (半年)
-                                if (lu_idx1 - lu_idx2) >= 120:
-                                    p1 = hist_full.loc[lu_idx1, 'close']
-                                    p2 = hist_full.loc[lu_idx2, 'close']
-                                    # 两次价格对比差异在 20% 以内
-                                    if p2 > 0 and (abs(p1 - p2) / p2) <= 0.20:
-                                        s5_hit = True
-                                        break
-                    if s5_hit:
-                        strategies_hit.append(("策略5", "tag-s5"))
+                    cond_range_ok = all(
+                        -4 <= hist_full.loc[j, 'pct_chg'] <= 4
+                        for j in recent_3_days_indices
+                    )
+                    
+                    # 3. 近3天的收盘价均在最近一次涨停当日最低价附近（-1.5% ~ +3%）
+                    if cond_range_ok and last_lu_low > 0:
+                        cond_near_low = all(
+                            last_lu_low * 0.985 <= hist_full.loc[j, 'close'] <= last_lu_low * 1.03
+                            for j in recent_3_days_indices
+                        )
+                        if cond_near_low:
+                            strategies_hit.append(("策略5", "tag-s5"))
 
 
             if strategies_hit:

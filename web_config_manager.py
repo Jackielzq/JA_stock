@@ -323,3 +323,72 @@ def export_monitor_pool(format="json"):
     with _lock:
         pool = _load().get("monitor_pool", {"stocks": [], "concepts": []})
     return pool
+
+# ==================== Excel 导入导出 ====================
+
+def import_monitor_from_excel(file_input):
+    """从 Excel 文件路径或 BytesIO 导入监控池（stock + concept 两个 sheet）"""
+    import pandas as pd
+    try:
+        xls = pd.ExcelFile(file_input)
+        result = {"stocks": 0, "concepts": 0}
+        
+        if "stock" in xls.sheet_names:
+            df = pd.read_excel(xls, "stock")
+            stocks = []
+            for _, row in df.iterrows():
+                code = str(row.get("股票代码", "")).strip()
+                name = str(row.get("股票名称", "")).strip()
+                remark = str(row.get("备注", "")).strip()
+                if code and code != "nan":
+                    if remark in ("--", "nan"):
+                        remark = ""
+                    stocks.append({"code": code, "name": name, "remark": remark})
+            if stocks:
+                import_stocks(stocks)
+                result["stocks"] = len(stocks)
+        
+        if "concept" in xls.sheet_names:
+            df = pd.read_excel(xls, "concept")
+            concept_col = "概念名称" if "概念名称" in df.columns else df.columns[0]
+            concepts = []
+            for _, row in df.iterrows():
+                name = str(row.get(concept_col, "")).strip()
+                if name and name != "nan":
+                    concepts.append({"name": name})
+            if concepts:
+                import_concepts(concepts)
+                result["concepts"] = len(concepts)
+        
+        return result
+    except Exception as e:
+        raise ValueError(f"Excel 导入失败: {e}")
+
+
+def export_monitor_to_excel():
+    """导出监控池为 Excel 文件，返回文件路径"""
+    import pandas as pd
+    import tempfile
+    
+    pool = get_monitor_pool()
+    output_path = os.path.join(tempfile.gettempdir(), "monitor_pool_export.xlsx")
+    
+    with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+        stocks = pool.get("stocks", [])
+        if stocks:
+            df_stock = pd.DataFrame(stocks)
+            df_stock = df_stock.rename(columns={"code": "股票代码", "name": "股票名称", "remark": "备注"})
+            df_stock = df_stock[["股票代码", "股票名称", "备注"]]
+        else:
+            df_stock = pd.DataFrame(columns=["股票代码", "股票名称", "备注"])
+        df_stock.to_excel(writer, sheet_name="stock", index=False)
+        
+        concepts = pool.get("concepts", [])
+        if concepts:
+            df_concept = pd.DataFrame(concepts)
+            df_concept = df_concept.rename(columns={"name": "概念名称"})
+        else:
+            df_concept = pd.DataFrame(columns=["概念名称"])
+        df_concept.to_excel(writer, sheet_name="concept", index=False)
+    
+    return output_path

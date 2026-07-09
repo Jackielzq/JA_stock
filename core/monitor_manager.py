@@ -87,6 +87,56 @@ class MonitorPoolManager:
                 df_concept.to_sql('monitor_pool_concept', conn, index=False, if_exists='append')
         except Exception as e:
             logger.error(f"同步Excel监控池失败: {e}")
+    def sync_from_web_config(self):
+        """从 Web 配置 (web_settings.json) 同步监控池到数据库"""
+        self.init_tables()
+        try:
+            from web_config_manager import get_monitor_pool
+            pool = get_monitor_pool()
+            
+            stocks = pool.get("stocks", [])
+            concepts = pool.get("concepts", [])
+            
+            if not stocks and not concepts:
+                logger.info("Web配置中监控池为空，跳过同步")
+                return False
+            
+            if stocks:
+                df_stock = pd.DataFrame(stocks)
+                df_stock["ts_code"] = df_stock["code"].apply(self._convert_code)
+                df_stock["name"] = df_stock["name"].fillna("")
+                if "remark" not in df_stock.columns:
+                    df_stock["remark"] = ""
+                df_stock["remark"] = df_stock["remark"].fillna("")
+                df_stock["update_time"] = datetime.now()
+                df_stock["sort_order"] = range(len(df_stock))
+                df_stock = df_stock[["ts_code", "name", "remark", "sort_order", "update_time"]]
+                df_stock = df_stock.drop_duplicates(subset=["ts_code"], keep="first")
+            else:
+                df_stock = pd.DataFrame(columns=["ts_code", "name", "remark", "sort_order", "update_time"])
+            
+            if concepts:
+                df_concept = pd.DataFrame(concepts)
+                df_concept["concept_name"] = df_concept["name"].astype(str).str.strip()
+                df_concept["update_time"] = datetime.now()
+                df_concept["sort_order"] = range(len(df_concept))
+                df_concept = df_concept[["concept_name", "sort_order", "update_time"]]
+                df_concept = df_concept.drop_duplicates(subset=["concept_name"], keep="first")
+            else:
+                df_concept = pd.DataFrame(columns=["concept_name", "sort_order", "update_time"])
+            
+            with self.engine.begin() as conn:
+                conn.execute(text("TRUNCATE TABLE monitor_pool_stock"))
+                conn.execute(text("TRUNCATE TABLE monitor_pool_concept"))
+                df_stock.to_sql("monitor_pool_stock", conn, index=False, if_exists="append")
+                df_concept.to_sql("monitor_pool_concept", conn, index=False, if_exists="append")
+            
+            logger.info(f"从Web配置同步监控池: {len(stocks)} 只股票, {len(concepts)} 个概念")
+            return True
+        except Exception as e:
+            logger.error(f"从Web配置同步监控池失败: {e}")
+            return False
+
 
     def get_monitor_data(self, latest_date):
             # 1. 拿取监控的概念池

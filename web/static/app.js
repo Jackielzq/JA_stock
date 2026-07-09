@@ -1,4 +1,4 @@
-﻿// JA_Stock Web Console - Frontend Logic v2
+// JA_Stock Web Console - Frontend Logic v2
 
 var currentPage = "home";
 var currentSubTab = "email-config";
@@ -504,30 +504,34 @@ function saveStockRemark(code, idx, val) {
     });
 }
 
-function importMonitorStocks() {
-    byId("modal-import-stocks").classList.add("show");
+function importMonitorExcel() {
+    byId("modal-import-excel").classList.add("show");
 }
 
-function doImportStocks() {
-    var text = byId("import-stocks-text").value.trim();
-    if (!text) { showToast("请输入内容", "error"); return; }
-    var stocks = text.split("\n").map(function (line) {
-        var parts = line.split(",");
-        return { code: (parts[0] || "").trim(), name: (parts[1] || "").trim(), remark: (parts[2] || "").trim() };
-    }).filter(function (s) { return s.code; });
+function doImportExcel() {
+    var fileInput = byId("import-excel-file");
+    var file = fileInput.files[0];
+    if (!file) { showToast("请选择Excel文件", "error"); return; }
+    if (!file.name.match(/\.xlsx?$/i)) { showToast("请上传 .xlsx 或 .xls 文件", "error"); return; }
 
-    fetch("/api/config/monitor/stocks/import", {
+    var formData = new FormData();
+    formData.append("file", file);
+
+    fetch("/api/config/monitor/import-excel", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stocks: stocks })
+        body: formData
     }).then(function (r) { return r.json(); }).then(function (d) {
         if (d.code === 0) {
-            closeModal("modal-import-stocks");
+            closeModal("modal-import-excel");
+            fileInput.value = "";
             loadMonitorStocks();
+            loadMonitorConcepts();
             showToast(d.message);
         } else {
             showToast(d.message, "error");
         }
+    }).catch(function (e) {
+        showToast("导入失败: " + e.message, "error");
     });
 }
 
@@ -586,41 +590,19 @@ function removeConcept(name) {
         });
 }
 
-function importMonitorConcepts() {
-    byId("modal-import-concepts").classList.add("show");
-}
 
-function doImportConcepts() {
-    var text = byId("import-concepts-text").value.trim();
-    if (!text) { showToast("请输入内容", "error"); return; }
-    var concepts = text.split("\n").map(function (l) { return { name: l.trim() }; }).filter(function (c) { return c.name; });
 
-    fetch("/api/config/monitor/concepts/import", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ concepts: concepts })
-    }).then(function (r) { return r.json(); }).then(function (d) {
-        if (d.code === 0) {
-            closeModal("modal-import-concepts");
-            loadMonitorConcepts();
-            showToast(d.message);
-        } else {
-            showToast(d.message, "error");
-        }
-    });
-}
-
-function exportMonitor() {
-    fetch("/api/config/monitor/export")
+function exportMonitorExcel() {
+    fetch("/api/config/monitor/export-excel")
         .then(function (r) { return r.blob(); })
         .then(function (blob) {
             var a = document.createElement("a");
             a.href = URL.createObjectURL(blob);
-            a.download = "monitor_pool_export.json";
+            a.download = "monitor_pool_export.xlsx";
             a.click();
         })
         .catch(function () {
-            window.open("/api/config/monitor/export", "_blank");
+            window.open("/api/config/monitor/export-excel", "_blank");
         });
 }
 
