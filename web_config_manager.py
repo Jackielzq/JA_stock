@@ -327,11 +327,18 @@ def export_monitor_pool(format="json"):
 # ==================== Excel 导入导出 ====================
 
 def import_monitor_from_excel(file_input):
-    """从 Excel 文件路径或 BytesIO 导入监控池（stock + concept 两个 sheet）"""
+    """从 Excel 文件导入监控池，完全覆盖现有数据（同时同步到数据库）"""
     import pandas as pd
     try:
         xls = pd.ExcelFile(file_input)
         result = {"stocks": 0, "concepts": 0}
+        
+        # 先清空再导入，实现完全覆盖
+        with _lock:
+            cfg = _load()
+            cfg["monitor_pool"]["stocks"] = []
+            cfg["monitor_pool"]["concepts"] = []
+            _save(cfg)
         
         if "stock" in xls.sheet_names:
             df = pd.read_excel(xls, "stock")
@@ -359,6 +366,16 @@ def import_monitor_from_excel(file_input):
             if concepts:
                 import_concepts(concepts)
                 result["concepts"] = len(concepts)
+        
+        # 同步到数据库表，确保监控报告也使用最新数据
+        try:
+            from core.monitor_manager import MonitorPoolManager
+            from core.db_engine import DBEngine
+            db = DBEngine()
+            mgr = MonitorPoolManager(db)
+            mgr.sync_from_web_config()
+        except Exception:
+            pass  # 数据库不可用时静默跳过
         
         return result
     except Exception as e:
