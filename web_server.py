@@ -356,6 +356,12 @@ def _run_in_thread(mode):
                     FactorCalculator(db).update_daily_factors(ld)
                 logger.info("[" + mode + "] 数据更新完成")
 
+            elif mode == "news":
+                from main import run_news
+                ensure_qh_attached()
+                run_news(db, renderer)
+                logger.info("[" + mode + "] 新闻热点生成完成")
+
             elif mode == "review":
                 from main import run_review
                 ensure_qh_attached()
@@ -443,7 +449,7 @@ def _run_in_thread(mode):
 
 @app.route("/api/run/<mode>", methods=["POST"])
 def api_run(mode):
-    valid = ["update", "factor", "review", "select", "monitor", "email", "deploy", "github", "full"]
+    valid = ["update", "factor", "review", "news", "select", "monitor", "email", "deploy", "github", "full"]
     if mode not in valid:
         return jsonify({"code": 1, "message": "不支持的模式"}), 400
     if task_status["running"]:

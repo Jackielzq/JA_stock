@@ -91,8 +91,8 @@ function escHtml(text) { var d = document.createElement("div"); d.textContent = 
 
 function runTask(mode) {
     var taskNames = {
-        update: "数据更新", review: "每日复盘", news: "新闻筛选",
-        monitor: "监控报告", select: "量化选股", email: "发送邮件",
+        update: "数据更新", review: "每日复盘", news: "新闻热点",
+        monitor: "热门个股概念监控", select: "量化选股", email: "发送邮件",
         deploy: "Hexo部署", github: "GitHub发布", full: "全流程"
     };
 
@@ -155,7 +155,7 @@ function pollStatus() {
             var tm = byId("status-time");
             var taskNames = {
                 update: "数据更新", review: "每日复盘", factor: "因子计算",
-                monitor: "监控报告", select: "量化选股", email: "发送邮件",
+                monitor: "热门个股概念监控", select: "量化选股", email: "发送邮件",
                 deploy: "Hexo部署", github: "GitHub发布", full: "全流程"
             };
 
@@ -201,7 +201,7 @@ function renderLogs(logs, running, task, elapsed) {
 
     var taskNames = {
         update: "数据更新", review: "每日复盘", factor: "因子计算",
-        monitor: "监控报告", select: "量化选股", email: "发送邮件",
+        monitor: "热门个股概念监控", select: "量化选股", email: "发送邮件",
         deploy: "Hexo部署", github: "GitHub发布", full: "全流程"
     };
 
