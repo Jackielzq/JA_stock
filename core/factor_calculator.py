@@ -723,7 +723,7 @@ class FactorCalculator:
             if pro_api is None: pro_api = ts.pro_api(TUSHARE_TOKEN)
             df_index = pro_api.index_daily(ts_code='000001.SH', start_date=start_date, end_date=end_date)
             for _, row in df_index.iterrows():
-                index_map[row['trade_date']] = {'open': row['open'], 'close': row['close'], 'high': row['high'], 'low': row['low'], 'pct_chg': row['pct_chg']}
+                index_map[row['trade_date']] = {'open': row['open'], 'close': row['close'], 'high': row['high'], 'low': row['low'], 'pct_chg': row['pct_chg'], 'change': row.get('change', 0)}
         except: pass
 
         history = []
@@ -760,8 +760,10 @@ class FactorCalculator:
             history.append({
                 'date': date, 'date_str': f"{date[4:6]}-{date[6:]}", 'height': int(height), 'score': int(score_res['total']),
                 'sh_open': idx_data.get('open', 0), 'sh_close': idx_data.get('close', 0), 'sh_high': idx_data.get('high', 0),
-                'sh_low': idx_data.get('low', 0), 'sh_pct': idx_data.get('pct_chg', 0), 'amount': amount_yi,
-                'vol_pct': round(vol_pct, 2), 'limit_up': limit_up_count, 'limit_down': limit_down_count,
+                'sh_low': idx_data.get('low', 0), 'sh_pct': idx_data.get('pct_chg', 0),
+                'sh_change': round(float(idx_data.get('change', 0)), 2), 'amount': amount_yi,
+                'vol_pct': round(vol_pct, 2), 'vol_chg_abs': round(amount_yi - prev_amount, 0),
+                'limit_up': limit_up_count, 'limit_down': limit_down_count,
                 'up_count': up_count, 'down_count': down_count, 'ad_ratio': round(up_count/down_count, 2) if down_count > 0 else 99,
                 'promo_rate': round(promo_rate, 1)
             })
@@ -988,3 +990,224 @@ class FactorCalculator:
             })
             
         return self._enrich_context_info(sorted(results, key=lambda x: (x['level'], x['d10_curr']), reverse=True), date)
+
+    # ============================================================
+    # [新增] 宏观分析模块
+    # ============================================================
+
+    def get_key_index_panel(self, date):
+        """获取A股关键指数面板数据（涨跌幅+10日迷你图数据）"""
+        import tushare as ts
+        from config import TUSHARE_TOKEN
+        
+        try:
+            pro = ts.pro_api(TUSHARE_TOKEN)
+            # 取20天确保有10个交易日
+            from datetime import timedelta
+            start_date = (datetime.strptime(date, "%Y%m%d") - timedelta(days=25)).strftime("%Y%m%d")
+            
+            index_codes = [
+                ("000016.SH", "上证50"), ("000300.SH", "沪深300"),
+                ("000905.SH", "中证500"), ("000852.SH", "中证1000"),
+                ("000688.SH", "科创50"), ("399006.SZ", "创业板指"),
+            ]
+            
+            results = []
+            for code, name in index_codes:
+                try:
+                    df = pro.index_daily(ts_code=code, start_date=start_date, end_date=date,
+                                         fields="ts_code,trade_date,close,pct_chg")
+                    if df is None or df.empty: continue
+                    df = df.sort_values("trade_date")
+                    today = df[df["trade_date"] == date]
+                    if today.empty: continue
+                    today = today.iloc[0]
+                    
+                    vals = df["pct_chg"].values
+                    pct_5d = round(((1 + vals[-5:] / 100).prod() - 1) * 100, 2) if len(vals) >= 5 else round(((1 + vals / 100).prod() - 1) * 100, 2)
+                    
+                    # 近10日迷你图数据
+                    spark_vals = vals[-10:].tolist() if len(vals) >= 10 else vals.tolist()
+                    spark_vals = [round(float(v), 2) for v in spark_vals]
+                    spark_max = max(spark_vals) if spark_vals else 1
+                    spark_min = min(spark_vals) if spark_vals else 0
+                    spark_rng = spark_max - spark_min if spark_max != spark_min else 1
+                    
+                    results.append({
+                        "name": name, "code": code,
+                        "close": round(float(today["close"]), 2),
+                        "pct_chg": round(float(today["pct_chg"]), 2),
+                        "pct_5d": pct_5d,
+                        "sparkline": spark_vals,
+                        "spark_min": round(spark_min, 2),
+                        "spark_max": round(spark_max, 2),
+                        "spark_range": round(spark_rng, 2),
+                    })
+                except Exception as e:
+                    logging.warning(f"获取指数 {name}({code}) 失败: {e}")
+            return results
+        except Exception as e:
+            logging.error(f"获取关键指数面板失败: {e}")
+            return []
+
+    def get_global_index_panel(self, date):
+        """获取国际+港股指数面板数据（含10日迷你图数据）"""
+        import tushare as ts
+        from config import TUSHARE_TOKEN
+        
+        try:
+            pro = ts.pro_api(TUSHARE_TOKEN)
+            from datetime import timedelta
+            start_date = (datetime.strptime(date, "%Y%m%d") - timedelta(days=20)).strftime("%Y%m%d")
+            
+            global_codes = [
+                ("DJI", "道琼斯"), ("IXIC", "纳斯达克"), ("SPX", "标普500"),
+                ("HSI", "恒生指数"), ("N225", "日经225"), ("KS11", "韩国KOSPI"),
+            ]
+            
+            results = []
+            for code, name in global_codes:
+                try:
+                    df = pro.index_global(ts_code=code, start_date=start_date, end_date=date)
+                    if df is None or df.empty: continue
+                    df = df.sort_values("trade_date")
+                    today = df.iloc[-1]
+                    
+                    vals = df["pct_chg"].values
+                    pct_5d = round(((1 + vals[-5:] / 100).prod() - 1) * 100, 2) if len(vals) >= 5 else 0
+                    
+                    # 近10日迷你图数据
+                    spark_vals = vals[-10:].tolist() if len(vals) >= 10 else vals.tolist()
+                    spark_vals = [round(float(v), 2) for v in spark_vals]
+                    spark_max = max(spark_vals) if spark_vals else 1
+                    spark_min = min(spark_vals) if spark_vals else 0
+                    spark_rng = spark_max - spark_min if spark_max != spark_min else 1
+                    
+                    results.append({
+                        "name": name, "code": code,
+                        "close": round(float(today["close"]), 2),
+                        "pct_chg": round(float(today["pct_chg"]), 2),
+                        "pct_5d": pct_5d,
+                        "sparkline": spark_vals,
+                        "spark_min": round(spark_min, 2),
+                        "spark_max": round(spark_max, 2),
+                        "spark_range": round(spark_rng, 2),
+                    })
+                except Exception as e:
+                    logging.warning(f"获取国际指数 {name}({code}) 失败: {e}")
+            return results
+        except Exception as e:
+            logging.error(f"获取国际指数面板失败: {e}")
+            return []
+
+    def get_north_money_flow(self, date):
+        """获取北向资金每日净流入（近20个交易日，计算累计值日差）"""
+        import tushare as ts
+        from config import TUSHARE_TOKEN
+        
+        try:
+            pro = ts.pro_api(TUSHARE_TOKEN)
+            from datetime import timedelta
+            start_date = (datetime.strptime(date, "%Y%m%d") - timedelta(days=50)).strftime("%Y%m%d")
+            
+            df = pro.moneyflow_hsgt(start_date=start_date, end_date=date)
+            if df is None or df.empty: return []
+            
+            df = df.sort_values("trade_date")
+            df["north_money"] = df["north_money"].astype(float)
+            # 计算每日净流入（累计值的日差，单位：万元→亿元）
+            df["daily_net"] = df["north_money"].diff() / 10000
+            df = df[df["daily_net"].notna()].tail(20)
+            
+            results = []
+            for _, row in df.iterrows():
+                results.append({
+                    "trade_date": row["trade_date"],
+                    "date_str": f"{str(row['trade_date'])[4:6]}/{str(row['trade_date'])[6:8]}",
+                    "north_money": round(float(row["daily_net"]), 2),
+                })
+            return results
+        except Exception as e:
+            logging.error(f"获取北向资金失败: {e}")
+            return []
+
+    def get_sector_market_correlation(self, date):
+        """计算板块与大盘关联分析（相关系数+领先性+动量+资金，用于象限散点图）"""
+        import numpy as np
+        import tushare as ts
+        from config import TUSHARE_TOKEN
+        
+        try:
+            dates = self.db.get_recent_trading_days(date, 60)
+            if len(dates) < 30: return []
+            dates.sort()
+            
+            pro = ts.pro_api(TUSHARE_TOKEN)
+            df_sh = pro.index_daily(ts_code="000001.SH", start_date=dates[0], end_date=dates[-1],
+                                    fields="trade_date,pct_chg")
+            if df_sh is None or df_sh.empty: return []
+            df_sh = df_sh.sort_values("trade_date").set_index("trade_date")
+            
+            df_ind = self._get_data(text(
+                f"SELECT trade_date, industry_name, avg_pct FROM industry_daily "
+                f"WHERE trade_date >= '{dates[0]}' AND trade_date <= '{dates[-1]}'"
+            ))
+            if df_ind.empty: return []
+            
+            # 获取板块成分股成交额（用于气泡大小）
+            df_amount = self._get_data(text(
+                f"SELECT trade_date, industry, SUM(amount) as total_amount FROM daily_data "
+                f"WHERE trade_date >= '{dates[0]}' AND trade_date <= '{dates[-1]}' "
+                f"AND industry IS NOT NULL GROUP BY trade_date, industry"
+            ))
+            amount_map = {}
+            if not df_amount.empty:
+                for ind in df_amount["industry"].unique():
+                    amts = df_amount[df_amount["industry"] == ind]
+                    amount_map[ind] = round(float(amts["total_amount"].mean() / 1e5), 1)  # 千元→亿元  # 日均成交额(亿)
+            
+            sh_pct = df_sh["pct_chg"]
+            all_corrs = []
+            results = []
+            
+            for ind_name in df_ind["industry_name"].unique():
+                ind_data = df_ind[df_ind["industry_name"] == ind_name].set_index("trade_date")["avg_pct"]
+                common = sh_pct.index.intersection(ind_data.index)
+                if len(common) < 20: continue
+                
+                sh_a = sh_pct.loc[common].values
+                ind_a = ind_data.loc[common].values
+                corr = round(float(np.corrcoef(sh_a, ind_a)[0, 1]), 3)
+                all_corrs.append(corr)
+                
+                best_lag, best_xcorr = 0, abs(corr)
+                for lag in range(1, min(6, len(common) - 5)):
+                    xc = round(float(np.corrcoef(sh_a[lag:], ind_a[:-lag])[0, 1]), 3)
+                    if abs(xc) > abs(best_xcorr): best_xcorr, best_lag = xc, lag
+                    xc2 = round(float(np.corrcoef(sh_a[:-lag], ind_a[lag:])[0, 1]), 3)
+                    if abs(xc2) > abs(best_xcorr): best_xcorr, best_lag = xc2, -lag
+                
+                pct_5d = round(float(((1 + ind_a[-5:] / 100).prod() - 1) * 100), 2) if len(ind_a) >= 5 else 0
+                pct_10d = round(float(((1 + ind_a[-10:] / 100).prod() - 1) * 100), 2) if len(ind_a) >= 10 else pct_5d
+                
+                results.append({
+                    "industry": ind_name, "correlation": corr,
+                    "lag_days": best_lag,
+                    "lag_desc": f"领先{abs(best_lag)}天" if best_lag > 0 else (f"滞后{abs(best_lag)}天" if best_lag < 0 else "同步"),
+                    "today_pct": round(float(ind_a[-1]), 2),
+                    "pct_5d": pct_5d,
+                    "pct_10d": pct_10d,
+                    "data_points": len(common),
+                    "avg_amount": amount_map.get(ind_name, 50),
+                })
+            
+            # 计算市场中位数用于象限参考线
+            med_corr = round(float(np.median(all_corrs)), 3) if all_corrs else 0.5
+            for r in results:
+                r["med_corr"] = med_corr
+            
+            results.sort(key=lambda x: x["correlation"], reverse=True)
+            return results  # 返回所有板块
+        except Exception as e:
+            logging.error(f"板块关联分析失败: {e}")
+            return []

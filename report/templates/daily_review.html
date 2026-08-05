@@ -72,6 +72,14 @@
 
         .row-flex { display: flex; gap: 20px; }
         .col-half { flex: 1; }
+        .row-flex.equal-height { align-items: stretch; }
+        .row-flex.equal-height > .col-half { display: flex; }
+        .row-flex.equal-height > .col-half > .card { flex: 1; margin-bottom: 0; display: flex; flex-direction: column; }
+        .row-flex.equal-height > .col-half > .card table { flex: 1; }
+        
+        /* === 四宫格布局 === */
+        .sector-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+        .sector-grid > .card { margin-bottom: 0; }
         .stock-name { font-weight: bold; color: #333; }
 
         /* === 涨跌停家数突出与统一颜色样式 === */
@@ -90,33 +98,26 @@
             box-shadow: 0 1px 3px rgba(39, 174, 96, 0.2);
         }
 
-        /* === 选股模块专属 CSS === */
-        .col-code { width: 65px; }
-        .col-name { width: 75px; }
-        .col-market { width: 45px; }
-        .col-ind { width: 110px; } 
-        .col-concept { width: 220px; text-align: left; font-size: 12px; }
-        .col-price { width: 55px; }
-        .col-pct { width: 65px; }
-        .col-hist-date { width: 90px; }
-        .col-hist-count { width: 60px; }
-        .col-score { width: 50px; }
-
-        .concept-item { 
-            display: inline-block; margin-right: 4px; padding: 1px 6px; border-radius: 4px; margin-bottom: 3px; font-size: 12px; background-color: #ffffff; 
-        }
-        .trend-deep-red { color: #c0392b; border: 1px solid #c0392b; font-weight: 900; }
-        .trend-light-red { color: #e74c3c; border: 1px solid #fab1a0; font-weight: normal; }
-        .trend-green { color: #27ae60; border: 1px solid #b2f2bb; font-weight: normal; }
-
-        .hist-date { color: #666; font-family: 'Consolas', monospace; }
-        .hist-count { display: inline-block; min-width: 20px; padding: 2px 6px; border-radius: 10px; font-weight: bold; color: #7f8c8d; }
-        .count-hot { background-color: #f1c40f; color: #2c3e50; box-shadow: 0 0 5px rgba(241, 196, 15, 0.5); border: 1px solid #d4ac0d; }
-        .count-super-hot { background-color: #e67e22; color: #fff; border: 1px solid #d35400; }
-
-        .score-box { font-weight: bold; font-size: 15px; color: #d35400; }
-        .strategy-header { font-size: 15px; font-weight: bold; margin: 15px 0 10px 0; padding-left: 8px; border-left: 4px solid #f39c12; color: #34495e; background: #fafafa; padding: 8px; border-radius: 0 4px 4px 0;}
-        .count-badge { background: #e74c3c; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; margin-left: 5px;}
+        /* === 宏观模块专属 CSS === */
+        .macro-row { display: flex; gap: 20px; margin-bottom: 20px; }
+        .macro-half { flex: 1; }
+        .index-table th { background: #f0f4f8; font-size: 12px; padding: 8px 6px; }
+        .index-table td { font-size: 13px; padding: 7px 6px; }
+        .index-name { font-weight: 600; text-align: left; }
+        .index-code { font-size: 10px; color: #999; }
+        .amount-cell { color: #555; font-size: 12px; white-space: nowrap; }
+        .corr-high { color: #c0392b; font-weight: bold; }
+        .corr-mid { color: #e67e22; font-weight: bold; }
+        .corr-low { color: #7f8c8d; }
+        .lead-tag { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 11px; }
+        .lead-up { background: #ffe0e0; color: #c0392b; }
+        .lead-sync { background: #e8e8e8; color: #555; }
+        .lead-down { background: #e0ffe0; color: #27ae60; }
+        .section-desc { font-size: 12px; color: #95a5a6; margin-bottom: 12px; }
+        .sparkline-wrap { display: flex; align-items: flex-end; justify-content: center; height: 28px; gap: 1px; padding: 2px 0; }
+        .spark-bar { flex: 1; min-width: 4px; max-width: 7px; border-radius: 1px; }
+        .spark-up { background: #e06666; }
+        .spark-down { background: #5cba8a; }
         
         /* === 底部二维码模块专属 CSS === */
         .footer-qrcode {
@@ -157,8 +158,8 @@
         <!-- 1. 核心指标仪表盘 -->
         <div class="dashboard-grid">
             <div class="dash-card"><div class="dash-label">市场情绪综合分</div><div class="dash-val score-val">{{ latest.score }}</div><div class="dash-sub">满分 100</div></div>
-            <div class="dash-card"><div class="dash-label">上证指数</div><div class="dash-val {{ 'up' if latest.sh_pct > 0 else 'down' }}">{{ "%.2f"|format(latest.sh_close) }}</div><div class="dash-sub"><span class="{{ 'up' if latest.sh_pct > 0 else 'down' }}">{{ "%+.2f"|format(latest.sh_pct) }}%</span></div></div>
-            <div class="dash-card"><div class="dash-label">两市总成交</div><div class="dash-val">{{ "%.0f"|format(latest.amount) }}亿</div><div class="dash-sub"><span class="{{ 'up' if latest.vol_pct > 0 else 'down' }}">{{ '放量' if latest.vol_pct > 0 else '缩量' }} {{ "%.1f"|format(latest.vol_pct|abs) }}%</span></div></div>
+            <div class="dash-card"><div class="dash-label">上证指数</div><div class="dash-val {{ 'up' if latest.sh_pct > 0 else 'down' }}">{{ "%.2f"|format(latest.sh_close) }}</div><div class="dash-sub"><span class="{{ 'up' if latest.sh_pct > 0 else 'down' }}">{{ "%+d"|format(latest.sh_change|int) }}  {{ "%+.2f"|format(latest.sh_pct) }}%</span></div></div>
+            <div class="dash-card"><div class="dash-label">两市总成交</div><div class="dash-val">{{ "%.0f"|format(latest.amount) }}亿</div><div class="dash-sub"><span class="{{ 'up' if latest.vol_pct > 0 else 'down' }}">{{ '放量' if latest.vol_pct > 0 else '缩量' }}{{ "%.0f"|format(latest.vol_chg_abs|abs) }}亿  {{ "%+.1f"|format(latest.vol_pct) }}%</span></div></div>
             <div class="dash-card">
                 <div class="dash-label">涨跌比 ({{ latest.ad_ratio }})</div>
                 <div class="dash-val"><span class="up">{{ "{:,}".format(latest.up_count) }}</span><span style="font-size:20px; color:#ddd; margin:0 5px;">/</span><span class="down">{{ "{:,}".format(latest.down_count) }}</span></div>
@@ -192,42 +193,34 @@
             </div>
         </div>
 
-
-        <div class="row-flex">
-            <!-- 3. 最强板块 -->
+        <!-- ========================================== -->
+        <!-- [新增] 宏观指数联动面板 -->
+        <!-- ========================================== -->
+        <div class="row-flex equal-height">
+            <!-- 左侧：A股关键指数 -->
             <div class="col-half">
                 <div class="card">
-                    <div class="card-header red-border">🔥 当日最强板块 TOP10</div>
-                    
-                    {% set ns_ts = namespace(limits=[]) %}
-                    {% for s in top_sectors %}
-                        {% if s.limit_count > 0 and s.limit_count not in ns_ts.limits %}
-                            {% set ns_ts.limits = ns_ts.limits + [s.limit_count] %}
-                        {% endif %}
-                    {% endfor %}
-                    {% set sorted_ts = ns_ts.limits | sort(reverse=True) %}
-                    {% set ts_thresh = namespace(val=9999) %}
-                    {% if sorted_ts|length >= 3 %}
-                        {% set ts_thresh.val = sorted_ts[2] %}
-                    {% elif sorted_ts|length > 0 %}
-                        {% set ts_thresh.val = sorted_ts[-1] %}
-                    {% endif %}
-
-                    <table>
-                        <thead><tr><th>板块名称</th><th>今日</th><th>5日</th><th>10日</th><th>涨停数</th></tr></thead>
-                        <tbody>
-                            {% for s in top_sectors %}
+                    <div class="card-header red-border">🇨🇳 A股关键指数一览</div>
+                    <table class="index-table" style="flex:1;">
+                        <thead>
                             <tr>
-                                <td style="text-align:left;">{{ s.industry }}</td>
-                                <td class="{{ 'up' if s.pct_1d > 0 else 'down' }}">{{ "%.2f"|format(s.pct_1d) }}%</td>
-                                <td class="{{ 'up' if s.pct_5d > 0 else 'down' }}">{{ "%.2f"|format(s.pct_5d) }}%</td>
-                                <td class="{{ 'up' if s.pct_10d > 0 else 'down' }}">{{ "%.2f"|format(s.pct_10d) }}%</td>
+                                <th style="width:22%;">指数</th><th style="width:18%;">收盘</th><th style="width:18%;">今日涨跌</th><th style="width:18%;">5日涨跌</th><th style="width:24%;">近10日趋势</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for idx in key_index_panel %}
+                            <tr>
+                                <td class="index-name">{{ idx.name }}<br><span class="index-code">{{ idx.code }}</span></td>
+                                <td>{{ idx.close }}</td>
+                                <td class="{{ 'up' if idx.pct_chg > 0 else ('down' if idx.pct_chg < 0 else 'flat') }}">{{ "%+.2f"|format(idx.pct_chg) }}%</td>
+                                <td class="{{ 'up' if idx.pct_5d > 0 else ('down' if idx.pct_5d < 0 else 'flat') }}">{{ "%+.2f"|format(idx.pct_5d) }}%</td>
                                 <td>
-                                    {% if s.limit_count >= ts_thresh.val and s.limit_count > 0 %}
-                                        <span class="limit-max-up">{{ s.limit_count }}</span>
-                                    {% else %}
-                                        <span class="limit-up-normal">{{ s.limit_count }}</span>
-                                    {% endif %}
+                                    <div class="sparkline-wrap">
+                                        {% for v in idx.sparkline %}
+                                        {% set bar_h = ((v - idx.spark_min) / idx.spark_range * 100)|int if idx.spark_range > 0 else 50 %}
+                                        <div class="spark-bar {{ 'spark-up' if v >= 0 else 'spark-down' }}" style="height:{{ bar_h }}%" title="{{ '%+d' % v }}%"></div>
+                                        {% endfor %}
+                                    </div>
                                 </td>
                             </tr>
                             {% endfor %}
@@ -235,40 +228,30 @@
                     </table>
                 </div>
             </div>
-            <!-- 4. 最弱板块 -->
+            <!-- 右侧：国际+港股指数 -->
             <div class="col-half">
                 <div class="card">
-                    <div class="card-header green-border">🧊 当日最拉垮板块 TOP10</div>
-                    
-                    {% set ns_bs = namespace(limits=[]) %}
-                    {% for s in bottom_sectors %}
-                        {% if s.limit_count > 0 and s.limit_count not in ns_bs.limits %}
-                            {% set ns_bs.limits = ns_bs.limits + [s.limit_count] %}
-                        {% endif %}
-                    {% endfor %}
-                    {% set sorted_bs = ns_bs.limits | sort(reverse=True) %}
-                    {% set bs_thresh = namespace(val=9999) %}
-                    {% if sorted_bs|length >= 3 %}
-                        {% set bs_thresh.val = sorted_bs[2] %}
-                    {% elif sorted_bs|length > 0 %}
-                        {% set bs_thresh.val = sorted_bs[-1] %}
-                    {% endif %}
-
-                    <table>
-                        <thead><tr><th>板块名称</th><th>今日</th><th>5日</th><th>10日</th><th>跌停数</th></tr></thead>
-                        <tbody>
-                            {% for s in bottom_sectors %}
+                    <div class="card-header" style="border-left-color:#2980b9;">🌍 全球主要指数 (含港股)</div>
+                    <table class="index-table" style="flex:1;">
+                        <thead>
                             <tr>
-                                <td style="text-align:left;">{{ s.industry }}</td>
-                                <td class="{{ 'up' if s.pct_1d > 0 else 'down' }}">{{ "%.2f"|format(s.pct_1d) }}%</td>
-                                <td class="{{ 'up' if s.pct_5d > 0 else 'down' }}">{{ "%.2f"|format(s.pct_5d) }}%</td>
-                                <td class="{{ 'up' if s.pct_10d > 0 else 'down' }}">{{ "%.2f"|format(s.pct_10d) }}%</td>
+                                <th style="width:22%;">指数</th><th style="width:18%;">收盘</th><th style="width:18%;">今日涨跌</th><th style="width:18%;">5日涨跌</th><th style="width:24%;">近10日趋势</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for idx in global_index_panel %}
+                            <tr>
+                                <td class="index-name">{{ idx.name }}</td>
+                                <td>{{ idx.close }}</td>
+                                <td class="{{ 'up' if idx.pct_chg > 0 else ('down' if idx.pct_chg < 0 else 'flat') }}">{{ "%+.2f"|format(idx.pct_chg) }}%</td>
+                                <td class="{{ 'up' if idx.pct_5d > 0 else ('down' if idx.pct_5d < 0 else 'flat') }}">{{ "%+.2f"|format(idx.pct_5d) }}%</td>
                                 <td>
-                                    {% if s.limit_count >= bs_thresh.val and s.limit_count > 0 %}
-                                        <span class="limit-max-down">{{ s.limit_count }}</span>
-                                    {% else %}
-                                        <span class="limit-down-normal">{{ s.limit_count }}</span>
-                                    {% endif %}
+                                    <div class="sparkline-wrap">
+                                        {% for v in idx.sparkline %}
+                                        {% set bar_h = ((v - idx.spark_min) / idx.spark_range * 100)|int if idx.spark_range > 0 else 50 %}
+                                        <div class="spark-bar {{ 'spark-up' if v >= 0 else 'spark-down' }}" style="height:{{ bar_h }}%" title="{{ '%+d' % v }}%"></div>
+                                        {% endfor %}
+                                    </div>
                                 </td>
                             </tr>
                             {% endfor %}
@@ -278,242 +261,213 @@
             </div>
         </div>
 
-        <!-- 概念板块 -->
-        <div class="row-flex">
-            <!-- 左侧：概念涨幅榜 -->
-            <div class="col-half">
-                <div class="card">
-                    <div class="card-header red-border">🔥 概念涨幅 TOP10 (含趋势)</div>
 
-                    {% set ns_tc = namespace(limits=[]) %}
-                    {% for item in top_concepts %}
-                        {% if item.limit_count > 0 and item.limit_count not in ns_tc.limits %}
-                            {% set ns_tc.limits = ns_tc.limits + [item.limit_count] %}
-                        {% endif %}
-                    {% endfor %}
-                    {% set sorted_tc = ns_tc.limits | sort(reverse=True) %}
-                    {% set tc_thresh = namespace(val=9999) %}
-                    {% if sorted_tc|length >= 3 %}
-                        {% set tc_thresh.val = sorted_tc[2] %}
-                    {% elif sorted_tc|length > 0 %}
-                        {% set tc_thresh.val = sorted_tc[-1] %}
-                    {% endif %}
-
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>概念名称</th>
-                                <th>今日</th>
-                                <th>5日</th>
-                                <th>10日</th>
-                                <th>涨停数</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for item in top_concepts %}
-                            <tr>
-                                <td class="stock-name" style="text-align:left;">{{ item.name }}</td>
-                                <td class="{{ 'up' if item.pct_chg > 0 else 'down' }}">{{ item.pct_chg }}%</td>
-                                <td class="{{ 'up' if item.pct_5d_val > 0 else 'down' }}">{{ item.pct_5d }}%</td>
-                                <td class="{{ 'up' if item.pct_10d_val > 0 else 'down' }}">{{ item.pct_10d }}%</td>
-                                <td>
-                                    {% if item.limit_count >= tc_thresh.val and item.limit_count > 0 %}
-                                        <span class="limit-max-up">{{ item.limit_count }}</span>
-                                    {% else %}
-                                        <span class="limit-up-normal">{{ item.limit_count }}</span>
-                                    {% endif %}
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- 右侧：概念跌幅榜 -->
-            <div class="col-half">
-                <div class="card">
-                    <div class="card-header green-border">❄️ 概念跌幅 TOP10 (含趋势)</div>
-                    
-                    {% set ns_bc = namespace(limits=[]) %}
-                    {% for item in bottom_concepts %}
-                        {% if item.limit_count > 0 and item.limit_count not in ns_bc.limits %}
-                            {% set ns_bc.limits = ns_bc.limits + [item.limit_count] %}
-                        {% endif %}
-                    {% endfor %}
-                    {% set sorted_bc = ns_bc.limits | sort(reverse=True) %}
-                    {% set bc_thresh = namespace(val=9999) %}
-                    {% if sorted_bc|length >= 3 %}
-                        {% set bc_thresh.val = sorted_bc[2] %}
-                    {% elif sorted_bc|length > 0 %}
-                        {% set bc_thresh.val = sorted_bc[-1] %}
-                    {% endif %}
-
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>概念名称</th>
-                                <th>今日</th>
-                                <th>5日</th>
-                                <th>10日</th>
-                                <th>跌停数</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for item in bottom_concepts %}
-                            <tr>
-                                <td class="stock-name" style="text-align:left;">{{ item.name }}</td>
-                                <td class="{{ 'up' if item.pct_chg > 0 else 'down' }}">{{ item.pct_chg }}%</td>
-                                <td class="{{ 'up' if item.pct_5d_val > 0 else 'down' }}">{{ item.pct_5d }}%</td>
-                                <td class="{{ 'up' if item.pct_10d_val > 0 else 'down' }}">{{ item.pct_10d }}%</td>
-                                <td>
-                                    {% if item.limit_count >= bc_thresh.val and item.limit_count > 0 %}
-                                        <span class="limit-max-down">{{ item.limit_count }}</span>
-                                    {% else %}
-                                        <span class="limit-down-normal">{{ item.limit_count }}</span>
-                                    {% endif %}
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <!-- 选股策略模块 -->
+        <!-- [新增] 北向资金流向 -->
         <div class="card">
-            <div class="card-header" style="border-left-color: #f39c12;">🎯 量化选股策略池，仅供参考，不作为投资建议 (共 {{ total_count }} 支)</div>
+            <div class="card-header" style="border-left-color:#e67e22;">💰 北向资金 (近20日每日净流入/流出)</div>
+            {% if north_money_flow %}
+            <div id="chart-north-flow" style="height: 300px;"></div>
+            {% else %}
+            <div style="padding:10px;color:#999;text-align:center;">北向资金数据暂不可用</div>
+            {% endif %}
+        </div>
+
+        <!-- [新增] 板块-大盘风向标 -->
+        <div class="card">
+            <div class="card-header purple-border">🎯 板块-大盘象限分析 (相关性 x 10日动量)</div>
+            <div class="section-desc">横轴=与上证关联度 | 纵轴=板块自身强弱 | 红=领先大盘 蓝=滞后大盘 | 圆圈大小=日均成交额</div>
+            {% if sector_correlation %}
+            <div id="chart-correlation" style="height: 480px;"></div>
+            {% else %}
+            <div style="padding:10px;color:#999;text-align:center;">板块关联数据计算中或暂不可用</div>
+            {% endif %}
+        </div>
+
+
+        <!-- ========================================== -->
+        <!-- 行业板块 + 概念板块 四宫格 -->
+        <!-- ========================================== -->
+        <div class="sector-grid">
+            <!-- 左上：当日最强板块 -->
+            <div class="card">
+                                <div class="card-header red-border">🔥 当日最强板块 TOP10</div>
+                                
+                                {% set ns_ts = namespace(limits=[]) %}
+                                {% for s in top_sectors %}
+                                    {% if s.limit_count > 0 and s.limit_count not in ns_ts.limits %}
+                                        {% set ns_ts.limits = ns_ts.limits + [s.limit_count] %}
+                                    {% endif %}
+                                {% endfor %}
+                                {% set sorted_ts = ns_ts.limits | sort(reverse=True) %}
+                                {% set ts_thresh = namespace(val=9999) %}
+                                {% if sorted_ts|length >= 3 %}
+                                    {% set ts_thresh.val = sorted_ts[2] %}
+                                {% elif sorted_ts|length > 0 %}
+                                    {% set ts_thresh.val = sorted_ts[-1] %}
+                                {% endif %}
             
-            {% for strat_name, stock_list in grouped_stocks.items() %}
-            <div class="strategy-section">
-                <div class="strategy-header">
-                    {{ strat_name }}
-                    <span class="count-badge">{{ stock_list|length }}</span>
-                </div>
-                {% if stock_list %}
-                <table>
-                    <thead>
-                        <tr>
-                            <th class="col-code">代码</th>
-                            <th class="col-name">名称</th>
-                            <th class="col-market">市场</th>
-                            <th class="col-ind">行业(涨幅)</th>
-                            <th class="col-concept">所属概念</th>
-                            <th class="col-price">现价</th>
-                            <th class="col-pct">涨幅</th>
-                            <th class="col-hist-date">最早入选</th>
-                            <th class="col-hist-count">总次数</th>
-                            <th class="col-score">评分</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for stock in stock_list %}
-                        <tr>
-                            <td>{{ stock.ts_code }}</td>
-                            <td>{{ stock.stock_name }}</td>
-                            <td><span class="market-tag market-{{ stock.market }}">{{ stock.market }}</span></td>
-                            <td>{{ stock.industry_html|safe }}</td>
-                            <td class="col-concept">{{ stock.concepts_str|safe }}</td>
-                            <td>{{ stock.close }}</td>
-                            <td class="{{ 'up' if stock.pct_chg > 0 else 'down' }}">{{ stock.pct_chg }}%</td>
-                            
-                            <!-- 日期列 -->
-                            <td><span class="hist-date">{{ stock.first_date }}</span></td>
-                            
-                            <!-- 次数列：高亮逻辑 -->
-                            <td>
-                                <span class="hist-count 
-                                    {{ 'count-super-hot' if stock.selection_count >= 5 
-                                       else ('count-hot' if stock.selection_count >= 2 else '') }}">
-                                    {{ stock.selection_count }}
-                                </span>
-                            </td>
-                            
-                            <td><span class="score-box">{{ stock.total_score }}</span></td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-                {% else %}
-                <div style="padding: 10px; color: #999; text-align: center; font-size: 13px;">该策略今日无符合条件的股票</div>
-                {% endif %}
+                                <table>
+                                    <thead><tr><th>板块名称</th><th>今日</th><th>5日</th><th>10日</th><th>涨停数</th></tr></thead>
+                                    <tbody>
+                                        {% for s in top_sectors %}
+                                        <tr>
+                                            <td style="text-align:left;">{{ s.industry }}</td>
+                                            <td class="{{ 'up' if s.pct_1d > 0 else 'down' }}">{{ "%.2f"|format(s.pct_1d) }}%</td>
+                                            <td class="{{ 'up' if s.pct_5d > 0 else 'down' }}">{{ "%.2f"|format(s.pct_5d) }}%</td>
+                                            <td class="{{ 'up' if s.pct_10d > 0 else 'down' }}">{{ "%.2f"|format(s.pct_10d) }}%</td>
+                                            <td>
+                                                {% if s.limit_count >= ts_thresh.val and s.limit_count > 0 %}
+                                                    <span class="limit-max-up">{{ s.limit_count }}</span>
+                                                {% else %}
+                                                    <span class="limit-up-normal">{{ s.limit_count }}</span>
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
             </div>
-            {% endfor %}
+
+            <!-- 右上：当日最拉垮板块 -->
+            <div class="card">
+                                <div class="card-header green-border">🧊 当日最拉垮板块 TOP10</div>
+                                
+                                {% set ns_bs = namespace(limits=[]) %}
+                                {% for s in bottom_sectors %}
+                                    {% if s.limit_count > 0 and s.limit_count not in ns_bs.limits %}
+                                        {% set ns_bs.limits = ns_bs.limits + [s.limit_count] %}
+                                    {% endif %}
+                                {% endfor %}
+                                {% set sorted_bs = ns_bs.limits | sort(reverse=True) %}
+                                {% set bs_thresh = namespace(val=9999) %}
+                                {% if sorted_bs|length >= 3 %}
+                                    {% set bs_thresh.val = sorted_bs[2] %}
+                                {% elif sorted_bs|length > 0 %}
+                                    {% set bs_thresh.val = sorted_bs[-1] %}
+                                {% endif %}
+            
+                                <table>
+                                    <thead><tr><th>板块名称</th><th>今日</th><th>5日</th><th>10日</th><th>跌停数</th></tr></thead>
+                                    <tbody>
+                                        {% for s in bottom_sectors %}
+                                        <tr>
+                                            <td style="text-align:left;">{{ s.industry }}</td>
+                                            <td class="{{ 'up' if s.pct_1d > 0 else 'down' }}">{{ "%.2f"|format(s.pct_1d) }}%</td>
+                                            <td class="{{ 'up' if s.pct_5d > 0 else 'down' }}">{{ "%.2f"|format(s.pct_5d) }}%</td>
+                                            <td class="{{ 'up' if s.pct_10d > 0 else 'down' }}">{{ "%.2f"|format(s.pct_10d) }}%</td>
+                                            <td>
+                                                {% if s.limit_count >= bs_thresh.val and s.limit_count > 0 %}
+                                                    <span class="limit-max-down">{{ s.limit_count }}</span>
+                                                {% else %}
+                                                    <span class="limit-down-normal">{{ s.limit_count }}</span>
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+            </div>
+
+            <!-- 左下：概念涨幅 -->
+            <div class="card">
+                                <div class="card-header red-border">🔥 概念涨幅 TOP10 (含趋势)</div>
+            
+                                {% set ns_tc = namespace(limits=[]) %}
+                                {% for item in top_concepts %}
+                                    {% if item.limit_count > 0 and item.limit_count not in ns_tc.limits %}
+                                        {% set ns_tc.limits = ns_tc.limits + [item.limit_count] %}
+                                    {% endif %}
+                                {% endfor %}
+                                {% set sorted_tc = ns_tc.limits | sort(reverse=True) %}
+                                {% set tc_thresh = namespace(val=9999) %}
+                                {% if sorted_tc|length >= 3 %}
+                                    {% set tc_thresh.val = sorted_tc[2] %}
+                                {% elif sorted_tc|length > 0 %}
+                                    {% set tc_thresh.val = sorted_tc[-1] %}
+                                {% endif %}
+            
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>概念名称</th>
+                                            <th>今日</th>
+                                            <th>5日</th>
+                                            <th>10日</th>
+                                            <th>涨停数</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for item in top_concepts %}
+                                        <tr>
+                                            <td class="stock-name" style="text-align:left;">{{ item.name }}</td>
+                                            <td class="{{ 'up' if item.pct_chg > 0 else 'down' }}">{{ item.pct_chg }}%</td>
+                                            <td class="{{ 'up' if item.pct_5d_val > 0 else 'down' }}">{{ item.pct_5d }}%</td>
+                                            <td class="{{ 'up' if item.pct_10d_val > 0 else 'down' }}">{{ item.pct_10d }}%</td>
+                                            <td>
+                                                {% if item.limit_count >= tc_thresh.val and item.limit_count > 0 %}
+                                                    <span class="limit-max-up">{{ item.limit_count }}</span>
+                                                {% else %}
+                                                    <span class="limit-up-normal">{{ item.limit_count }}</span>
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+            </div>
+
+            <!-- 右下：概念跌幅 -->
+            <div class="card">
+                                <div class="card-header green-border">❄️ 概念跌幅 TOP10 (含趋势)</div>
+                                
+                                {% set ns_bc = namespace(limits=[]) %}
+                                {% for item in bottom_concepts %}
+                                    {% if item.limit_count > 0 and item.limit_count not in ns_bc.limits %}
+                                        {% set ns_bc.limits = ns_bc.limits + [item.limit_count] %}
+                                    {% endif %}
+                                {% endfor %}
+                                {% set sorted_bc = ns_bc.limits | sort(reverse=True) %}
+                                {% set bc_thresh = namespace(val=9999) %}
+                                {% if sorted_bc|length >= 3 %}
+                                    {% set bc_thresh.val = sorted_bc[2] %}
+                                {% elif sorted_bc|length > 0 %}
+                                    {% set bc_thresh.val = sorted_bc[-1] %}
+                                {% endif %}
+            
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>概念名称</th>
+                                            <th>今日</th>
+                                            <th>5日</th>
+                                            <th>10日</th>
+                                            <th>跌停数</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for item in bottom_concepts %}
+                                        <tr>
+                                            <td class="stock-name" style="text-align:left;">{{ item.name }}</td>
+                                            <td class="{{ 'up' if item.pct_chg > 0 else 'down' }}">{{ item.pct_chg }}%</td>
+                                            <td class="{{ 'up' if item.pct_5d_val > 0 else 'down' }}">{{ item.pct_5d }}%</td>
+                                            <td class="{{ 'up' if item.pct_10d_val > 0 else 'down' }}">{{ item.pct_10d }}%</td>
+                                            <td>
+                                                {% if item.limit_count >= bc_thresh.val and item.limit_count > 0 %}
+                                                    <span class="limit-max-down">{{ item.limit_count }}</span>
+                                                {% else %}
+                                                    <span class="limit-down-normal">{{ item.limit_count }}</span>
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+            </div>
         </div>
 
-
-        <!-- 7. 监管异动监控 (三级预警 - 偏离值推演版) -->
-        <div class="card">
-            <div class="card-header purple-border">🚨 监管异动风控雷达 (偏离值推演)</div>
-            <table>
-                <thead>
-                    <tr>
-                        <th width="8%">代码</th>
-                        <th width="10%">名称</th>
-                        <th width="8%">现价</th>
-                        <th width="8%">今日涨幅</th>
-                        <th width="12%">10日偏离<br><span style="font-size:10px; color:#999;">(阈值100%)</span></th>
-                        <th width="12%">30日偏离<br><span style="font-size:10px; color:#999;">(阈值200%)</span></th>
-                        <th width="27%" style="background:#fff3e0;">明日推演 / 触发条件</th>
-                        <th width="15%">状态评估</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for stock in regulatory_stocks %}
-                    <tr style="background-color: {{ '#fff5f5' if stock.level == 3 else ('#fffdf0' if stock.level == 2 else '#fff') }}">
-                        <td>{{ stock.ts_code }}</td>
-                        <td style="font-weight:bold;">{{ stock.stock_name }}</td>
-                        <td>{{ stock.close }}</td>
-                        
-                        <!-- 当日涨幅 -->
-                        <td class="{{ 'up' if stock.pct_today > 0 else 'down' }}" style="font-weight:bold;">
-                            {{ "%+.2f"|format(stock.pct_today) }}%
-                        </td>
-                        
-                        <!-- 10日偏离值 -->
-                        <td style="font-weight:bold; color: {{ '#e74c3c' if stock.d10_curr >= 100 else ('#d35400' if stock.d10_curr >= 80 else '#333') }}">
-                            {{ "%.2f"|format(stock.d10_curr) }}%
-                        </td>
-                        
-                        <!-- 30日偏离值 -->
-                        <td style="font-weight:bold; color: {{ '#e74c3c' if stock.d30_curr >= 200 else ('#d35400' if stock.d30_curr >= 150 else '#333') }}">
-                            {{ "%.2f"|format(stock.d30_curr) }}%
-                        </td>
-
-                        <!-- 核心推演信息 -->
-                        <td style="background:#fff9ed; text-align: left; padding-left: 15px;">
-                            <div style="font-weight:bold; color: {{ '#c0392b' if stock.level >= 2 else '#333' }};">
-                                {{ stock.trigger_info }}
-                            </div>
-                            <div style="font-size:11px; color:#999; margin-top:2px;">
-                                {{ stock.status_info }}
-                            </div>
-                        </td>
-                        
-                        <!-- 状态标签 -->
-                        <td>
-                            {% if stock.level == 3 %}
-                                <span class="badge" style="background:#c0392b;">🔴 已触发</span>
-                            {% elif stock.level == 2 %}
-                                <span class="badge" style="background:#e67e22;">🟠 临界预警</span>
-                            {% else %}
-                                <span class="badge" style="background:#f39c12;">🟡 趋势监控</span>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% else %}
-                    <tr><td colspan="8" style="color:#999; padding:15px; text-align:center;">当前市场暂无逼近严重异动个股</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-
-        
-        <div style="text-align: center; color: #ccc; font-size: 12px; margin-top: 20px;">
+        <div style="text-align: center; color: #bbb; font-size: 12px; margin-top: 20px;">
             Generated by 罗大虾 at {{ generate_time }}
         </div>
-    </div>
 
 
 <!-- Echarts 渲染脚本 -->
@@ -730,6 +684,122 @@
                 }
             ]
         });
+
+        // ==========================================
+        // 图表6: 北向资金净流入 (近20日)
+        // ==========================================
+        (function() {
+            const chartEl = document.getElementById("chart-north-flow");
+            if (!chartEl) return;
+            const rawNorthFlow = {{ north_money_flow | tojson }};
+            const nfDates = rawNorthFlow.map(item => item.date_str);
+            const nfValues = rawNorthFlow.map(item => item.north_money);
+            
+            const chartNorth = echarts.init(chartEl);
+            chartNorth.setOption({
+                animation: false,
+                title: { text: "北向资金每日净流入 (亿元)", textStyle: {fontSize: 14} },
+                tooltip: { trigger: "axis", axisPointer: { type: "cross" } },
+                grid: { left: "10%", right: "5%", bottom: "10%" },
+                xAxis: { type: "category", data: nfDates },
+                yAxis: { 
+                    type: "value", name: "亿元",
+                    axisLabel: { formatter: "{value}亿" }
+                },
+                series: [{
+                    name: "北向净流入", type: "bar",
+                    data: nfValues.map(v => ({
+                        value: v,
+                        itemStyle: { color: v >= 0 ? "#e06666" : "#5cba8a" }
+                    })),
+                    barWidth: "60%",
+                    label: { show: true, position: "top", formatter: "{c}" }
+                }]
+            });
+        })();
+
+        // ==========================================
+        // ==========================================
+        // 图表7: 板块-大盘象限散点图
+        // ==========================================
+        (function() {
+            const chartEl = document.getElementById("chart-correlation");
+            if (!chartEl) return;
+            const raw = {{ sector_correlation | tojson }};
+            if (!raw || raw.length === 0) return;
+            
+            const medCorr = raw[0].med_corr || 0.5;
+            const maxAmount = Math.max(...raw.map(s => s.avg_amount || 50), 1);
+            
+            const scatterData = raw.map(s => {
+                const sz = Math.max(10, (s.avg_amount || 50) / maxAmount * 45);
+                let color = "#95a5a6";
+                if (s.lag_days > 0) color = "#e74c3c";
+                else if (s.lag_days < 0) color = "#2980b9";
+                const label = s.industry.length > 4 ? s.industry.substring(0,4) : s.industry;
+                return {
+                    value: [s.correlation, s.pct_10d],
+                    name: s.industry,
+                    symbolSize: sz,
+                    itemStyle: { color: color, opacity: 0.8, borderColor: color, borderWidth: 1 },
+                    label: { show: true, position: "top", fontSize: 10, formatter: label },
+                    _raw: s
+                };
+            });
+            
+            const chartCorr = echarts.init(chartEl);
+            chartCorr.setOption({
+                animation: false,
+                title: {
+                    text: "板块-大盘象限分布",
+                    subtext: "横轴=与上证关联度  |  纵轴=板块10日动量(%)",
+                    textStyle: {fontSize: 14},
+                    subtextStyle: {fontSize: 11, color: "#999"}
+                },
+                tooltip: {
+                    trigger: "item",
+                    formatter: function(p) {
+                        const s = p.data._raw;
+                        let quad = "⚫ 弱势边缘";
+                        if (s.correlation >= medCorr && s.pct_10d >= 0) quad = "🔥 领涨龙头";
+                        else if (s.correlation >= medCorr && s.pct_10d < 0) quad = "🔻 随大盘回调";
+                        else if (s.correlation < medCorr && s.pct_10d >= 0) quad = "🌟 独立行情";
+                        return "<b>" + p.name + "</b> (" + quad + ")<br/>"
+                            + "关联度: " + s.correlation.toFixed(3) + " | " + s.lag_desc + "<br/>"
+                            + "10日动量: " + (s.pct_10d>=0?"+":"") + s.pct_10d + "%<br/>"
+                            + "日均成交: " + s.avg_amount + "亿";
+                    }
+                },
+                grid: { left: "15%", right: "12%", bottom: "12%", top: "20%" },
+                xAxis: {
+                    type: "value", name: "与上证指数相关系数",
+                    min: 0, max: 1,
+                    splitLine: { lineStyle: { type: "dashed", color: "#eee" } },
+                    axisLabel: { fontSize: 11 }
+                },
+                yAxis: {
+                    type: "value", name: "板块10日动量 (%)",
+                    splitLine: { lineStyle: { type: "dashed", color: "#eee" } },
+                    axisLabel: { fontSize: 11, formatter: "{value}%" }
+                },
+                series: [{
+                    type: "scatter",
+                    data: scatterData,
+                    emphasis: { scale: 1.5, label: { show: true, fontSize: 14 } }
+                }],
+                // Quadrant labels
+                graphic: [
+                    { type: "text", left: "72%", top: "18%",
+                      style: { text: "🔥 领涨龙头", fill: "#c0392b", fontSize: 12, fontWeight: "bold" } },
+                    { type: "text", left: "22%", top: "18%",
+                      style: { text: "🌟 独立行情", fill: "#e67e22", fontSize: 12, fontWeight: "bold" } },
+                    { type: "text", left: "72%", top: "82%",
+                      style: { text: "🔻 随大盘回调", fill: "#2980b9", fontSize: 12, fontWeight: "bold" } },
+                    { type: "text", left: "22%", top: "82%",
+                      style: { text: "⚫ 弱势边缘", fill: "#7f8c8d", fontSize: 12, fontWeight: "bold" } },
+                ],
+            });
+        })();
     </script>
 
 </body>

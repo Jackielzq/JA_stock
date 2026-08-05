@@ -43,8 +43,8 @@ ensure_runtime_dirs()
 
 
 def run_review(db, renderer):
-    """执行每日复盘 (已合并量化选股，移除强势股/跌停股)"""
-    logger.info(">>> 启动每日复盘模块 (行情篇 + 选股篇)...")
+    """执行每日复盘 (宏观版：指数联动+北向资金+板块风向标)"""
+    logger.info(">>> 启动每日复盘模块 (宏观分析版)...")
     date = db.get_latest_date()
     if not date:
         logger.error("数据库无数据")
@@ -56,66 +56,54 @@ def run_review(db, renderer):
     if not trend_history: return
     latest = trend_history[0]
 
-    # 移除强势股和跌停股的计算，节省时间
-    # streak_map, df_limit_real = calc.calculate_strict_streaks(date)
-    # strong_stocks = calc.get_strong_stocks(date, streak_map)
-    # limit_down_stocks = calc.get_limit_down_stocks(date)
-
     top_sectors = calc.get_sector_data(date, ascending=False)
     bottom_sectors = calc.get_sector_data(date, ascending=True)
     active_stocks = calc.get_active_stocks(date)
-    regulatory_stocks = calc.get_regulatory_abnormal_stocks(date)
     top_concepts, bottom_concepts = calc.get_concept_data()
 
-    # --- 新增：调用选股引擎获取策略数据 ---
-    logger.info(">>> 正在合并计算选股策略数据...")
-    strategy_engine = StrategyEngine(db)
-    selection_results = strategy_engine.run_selection(date)
-    # 为了防止只在复盘里跑而不入库，如果你想在此处也将选股结果入库，可以解除下面这行的注释
-    strategy_engine.save_to_db(selection_results, date)
-
-    grouped_stocks = {s: [] for s in strategy_engine.ALL_STRATEGIES}
-    for item in selection_results:
-        s_name = item.get('strategy_name')
-        if s_name in grouped_stocks: grouped_stocks[s_name].append(item)
-        else: grouped_stocks[s_name] = [item]
-    # -----------------------------------
+    # --- 新增：宏观分析模块 ---
+    logger.info(">>> 正在获取宏观指数数据...")
+    key_index_panel = calc.get_key_index_panel(date)
+    global_index_panel = calc.get_global_index_panel(date)
+    north_money_flow = calc.get_north_money_flow(date)
+    logger.info(">>> 正在计算板块-大盘关联分析...")
+    sector_correlation = calc.get_sector_market_correlation(date)
 
     # 2. 构造数据
-    score_data = {'total': latest['score']}
+    score_data = {"total": latest["score"]}
     market_core = {
-        'sh_close': latest['sh_close'], 'sh_pct': latest['sh_pct'],
-        'total_amount_str': f"{latest['amount']:.0f}亿", 'vol_chg_pct': latest['vol_pct'],
-        'ad_ratio': latest['ad_ratio'], 'up_count': latest['up_count'], 'down_count': latest['down_count'],
-        'limit_up_count': latest['limit_up'], 'limit_down_count': latest['limit_down']
+        "sh_close": latest["sh_close"], "sh_pct": latest["sh_pct"],
+        "total_amount_str": f"{latest["amount"]:.0f}亿", "vol_chg_pct": latest["vol_pct"],
+        "ad_ratio": latest["ad_ratio"], "up_count": latest["up_count"], "down_count": latest["down_count"],
+        "limit_up_count": latest["limit_up"], "limit_down_count": latest["limit_down"]
     }
 
     data = {
-        'date': date,
-        'generate_time': datetime.now().strftime('%Y-%m-%d %H:%M'),
-        'market_core': market_core, 'score_data': score_data,
-        'promo_rate': latest['promo_rate'], 'high_board': latest['height'],
-        'trend_history': trend_history, 'top_sectors': top_sectors, 'bottom_sectors': bottom_sectors,
-        # 'strong_stocks': strong_stocks, 'limit_down_stocks': limit_down_stocks, # 已移除
-        'active_stocks': active_stocks, 'regulatory_stocks': regulatory_stocks,
-        'latest': latest, 'top_concepts': top_concepts, 'bottom_concepts': bottom_concepts,
-
-        # 传入选股数据给模板
-        'grouped_stocks': grouped_stocks,
-        'total_count': len(selection_results)
+        "date": date,
+        "generate_time": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "market_core": market_core, "score_data": score_data,
+        "promo_rate": latest["promo_rate"], "high_board": latest["height"],
+        "trend_history": trend_history,
+        "top_sectors": top_sectors, "bottom_sectors": bottom_sectors,
+        "active_stocks": active_stocks,
+        "latest": latest, "top_concepts": top_concepts, "bottom_concepts": bottom_concepts,
+        # 新增宏观数据
+        "key_index_panel": key_index_panel,
+        "global_index_panel": global_index_panel,
+        "north_money_flow": north_money_flow,
+        "sector_correlation": sector_correlation,
     }
 
     # 3. 渲染生成 HTML，并获取真实绝对路径
     outfile = get_daily_review_html_path(date)
-    final_html_path = renderer.render('daily_review.html', data, outfile)
+    final_html_path = renderer.render("daily_review.html", data, outfile)
 
     if final_html_path:
         # 4. 生成对应的 PDF 文件
         pdf_outfile = get_daily_review_pdf_path(date)
         convert_html_to_pdf(final_html_path, pdf_outfile)
         # 5. 打开浏览器
-        webbrowser.open(f'file://{final_html_path}')
-
+        webbrowser.open(f"file://{final_html_path}")
 
 def run_news(db, renderer):
     """执行新闻吹哨"""
