@@ -1101,34 +1101,38 @@ class FactorCalculator:
             return []
 
     def get_north_money_flow(self, date):
-        """获取北向资金每日净流入（近20个交易日，计算累计值日差）"""
-        import tushare as ts
-        from config import TUSHARE_TOKEN
-        
+        """获取北向资金每日净流入（近20个交易日，来源：东方财富 akshare，单位：亿元）"""
         try:
-            pro = ts.pro_api(TUSHARE_TOKEN)
-            from datetime import timedelta
-            start_date = (datetime.strptime(date, "%Y%m%d") - timedelta(days=50)).strftime("%Y%m%d")
+            import akshare as ak
+            import pandas as pd
             
-            df = pro.moneyflow_hsgt(start_date=start_date, end_date=date)
-            if df is None or df.empty: return []
+            # 分别获取沪股通和深股通净买入数据
+            df_h = ak.stock_hsgt_hist_em(symbol="沪股通")
+            df_s = ak.stock_hsgt_hist_em(symbol="深股通")
             
-            df = df.sort_values("trade_date")
-            df["north_money"] = df["north_money"].astype(float)
-            # 计算每日净流入（累计值的日差，单位：万元→亿元）
-            df["daily_net"] = df["north_money"].diff() / 10000
-            df = df[df["daily_net"].notna()].tail(20)
+            if df_h is None or df_h.empty or df_s is None or df_s.empty:
+                return []
+            
+            # 列: 日期, 当日成交净买额, 买入成交额, 卖出成交额, ...
+            df_h = df_h[["日期", "当日成交净买额"]].rename(columns={"日期": "trade_date", "当日成交净买额": "h_net"})
+            df_s = df_s[["日期", "当日成交净买额"]].rename(columns={"日期": "trade_date", "当日成交净买额": "s_net"})
+            
+            df = pd.merge(df_h, df_s, on="trade_date", how="inner")
+            df = df.dropna()
+            df["north_net"] = df["h_net"] + df["s_net"]
+            df["trade_date"] = df["trade_date"].astype(str).str.replace("-", "")
+            df = df.sort_values("trade_date").tail(20)
             
             results = []
             for _, row in df.iterrows():
                 results.append({
                     "trade_date": row["trade_date"],
                     "date_str": f"{str(row['trade_date'])[4:6]}/{str(row['trade_date'])[6:8]}",
-                    "north_money": round(float(row["daily_net"]), 2),
+                    "north_money": round(float(row["north_net"]), 1),
                 })
             return results
         except Exception as e:
-            logging.error(f"获取北向资金失败: {e}")
+            logging.error(f"获取北向资金(akshare)失败: {e}")
             return []
 
     def get_sector_market_correlation(self, date):

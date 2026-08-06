@@ -1,4 +1,4 @@
-# core/strategies.py - 策略引擎模块 (V8.2: 概念对齐监控池，增加策略4、策略5)
+# core/strategies.py - 策略引擎模块 (V8.3: 策略4改为底部吸筹确认，策略5改为倍量启动信号)
 
 import pandas as pd
 import numpy as np
@@ -36,8 +36,8 @@ class StrategyEngine:
             "策略1",  #三连击突破
             "策略2",  #分歧弱转强
             "策略3",  #半年天量突破
-            "策略4",  #十字星高位整理
-            "策略5"   #涨停回踩整理
+            "策略4",  #底部吸筹确认
+            "策略5"   #倍量启动信号
         ]
 
     def _init_selection_table(self):
@@ -330,8 +330,8 @@ class StrategyEngine:
 
             # ===================================================
             # 策略3(半年天量刚性突破 & 180日新高):
-            # 1、当前放量收涨（非涨停）
-            # 2、昨天未突破，今天刚突破（昨收 <= 120日天量最高价，且 今收 > 120日天量最高价）
+            # 1、当前放量（>昨日2倍）收涨（非涨停）
+            # 2、当日收盘价不能高于120日均线20%以上
             # 3、收盘价高于5、10、20、60、120日均线
             # 4、近5个交易日内涨幅不超过30%
             # 5、当日收盘价创 180 日新高
@@ -340,8 +340,8 @@ class StrategyEngine:
             if total_days >= 180:
                 d_t1 = hist_full.iloc[-2]
                 
-                # 1. 当前放量收涨（非涨停）
-                cond_vol = current_vol > d_t1['vol']
+                # 1. 当前放量（>昨日2倍）收涨（非涨停）
+                cond_vol = current_vol > d_t1['vol'] * 2
                 cond_up = pct_chg > 0
                 cond_not_lu = pct_chg < lu_limit
                 
@@ -351,115 +351,120 @@ class StrategyEngine:
                     half_year_lus = [j for j in lu_indices if j >= total_days - 120]
                     if len(half_year_lus) <= 3:
                         
-                        # 从当天数据库字段中读取现成的均线
-                        ma10 = get_val('ma_10')
-                        ma20 = get_val('ma_20')
+                        # 2. 当日收盘价不能高于120日均线20%以上
+                        if ma120 > 0 and close <= ma120 * 1.20:
                         
-                        # 3. 收盘价高于5、10、20、60、120日均线
-                        if ma5 > 0 and ma10 > 0 and ma20 > 0 and close > ma5 and close > ma10 and close > ma20:
+                            # 从当天数据库字段中读取现成的均线
+                            ma10 = get_val('ma_10')
+                            ma20 = get_val('ma_20')
                             
-                            # 4. 近5个交易日内涨幅不超过30%
-                            d_t5 = hist_full.iloc[-6] 
-                            pct_5d = (close / d_t5['close'] - 1) * 100
-                            
-                            if pct_5d <= 30.0:
+                            # 3. 收盘价高于5、10、20、60、120日均线
+                            if ma5 > 0 and ma10 > 0 and ma20 > 0 and close > ma5 and close > ma10 and close > ma20:
                                 
-                                # 5. 当日收盘价创180日新高
-                                start_180_idx = max(0, total_days - 181)
-                                past_180_max = hist_full.iloc[start_180_idx : total_days - 1]['high'].max()
+                                # 4. 近5个交易日内涨幅不超过30%
+                                d_t5 = hist_full.iloc[-6] 
+                                pct_5d = (close / d_t5['close'] - 1) * 100
                                 
-                                if close > past_180_max:
-                                
-                                    # 2. 寻找近半年(120日)成交量最高那天
-                                    start_120_idx = max(0, total_days - 121)
-                                    past_120_df = hist_full.iloc[start_120_idx : total_days - 1]
+                                if pct_5d <= 30.0:
                                     
-                                    if not past_120_df.empty:
-                                        max_vol_idx = past_120_df['vol'].idxmax()
-                                        max_vol_high = past_120_df.loc[max_vol_idx, 'high']
-                                        
-                                        # 核心精准过滤：昨天还没突破，今天才刚刚突破！
-                                        if close > max_vol_high and d_t1['close'] <= max_vol_high:
-                                            strategies_hit.append(("策略3", "tag-s3"))
+                                    # 5. 当日收盘价创180日新高
+                                    start_180_idx = max(0, total_days - 181)
+                                    past_180_max = hist_full.iloc[start_180_idx : total_days - 1]['high'].max()
+                                    
+                                    if close > past_180_max:
+                                        strategies_hit.append(("策略3", "tag-s3"))
 
 
 # ===================================================
-            # 策略4（涨停强整理突破）：
-            # 1、近一个月（20个交易日）只有一次涨停，其余日期都没涨停
-            # 2、涨停后的所有交易日，股价（收盘价）都在这次涨停价的97%以上
-            # 3、当日成交量大于昨日
-            # 4、收盘价破30日新高
-            # 5、近3天的涨幅不大于15%（排除涨停当天）
             # ===================================================
-            if total_days >= 35:
-                d_t0 = hist_full.iloc[-1]
-                d_t1 = hist_full.iloc[-2]
+            # 策略4（底部吸筹确认）：
+            # 1、最近20个交易日的最低价为近半年最低价
+            # 2、近20个交易日收红（收盘价高于开盘价）的天数占70%以上
+            # 3、收盘价高于5日均线
+            # 4、5日均线大于10日均线（短期金叉）
+            # 5、近5日均量大于近20日均量
+            # 6、近20个交易日无涨停
+            # 7、最近3个交易日涨幅不大于10%
+            # ===================================================
+            if total_days >= 125:
+                # 近半年数据范围（约125个交易日）
+                half_year_start = max(0, total_days - 125)
                 
-                # 1. 近一个月（20个交易日）内只有一次涨停
-                one_month_indices = range(total_days - 20, total_days)
-                month_lus = [idx for idx in one_month_indices if idx in lu_indices]
+                # 1. 最近20个交易日的最低价为近半年最低价
+                recent_20_low = hist_full.iloc[total_days - 20 : total_days]['low'].min()
+                half_year_low = hist_full.iloc[half_year_start : total_days]['low'].min()
                 
-                if len(month_lus) == 1:
-                    lu_idx = month_lus[0]
-                    # 确保涨停日发生在今天之前（即存在“涨停后”的交易日）
-                    if lu_idx < total_days - 1:
-                        lu_price = hist_full.loc[lu_idx, 'close']
-                        
-                        # 2. 涨停后的所有交易日（含今天），股价（收盘价）都在这次涨停价的97%以上
-                        post_lu_indices = range(lu_idx + 1, total_days)
-                        cond_above_97 = all(hist_full.loc[j, 'close'] >= lu_price * 0.97 for j in post_lu_indices)
-                        
-                        if cond_above_97:
-                            # 3. 当日成交量大于昨日
-                            if d_t0['vol'] > d_t1['vol']:
-                                
-                                # 5. 近3天的累计涨幅不大于15%（剔除涨停当天的波动）
-                                comp_return = 1.0
-                                for offset in range(3):
-                                    idx = total_days - 1 - offset
-                                    # 如果该交易日是涨停当天，则不计入这3天的累计涨幅计算
-                                    if idx != lu_idx:
-                                        day_pct = hist_full.loc[idx, 'pct_chg']
-                                        comp_return *= (1 + day_pct / 100.0)
-                                pct_3d_excluded = (comp_return - 1) * 100
-                                
-                                if pct_3d_excluded <= 15.0:
-                                    # 4. 当天收盘价突破30日新高（不含今天的前30个交易日的最高价）
-                                    past_30_max = hist_full.iloc[total_days - 31 : total_days - 1]['high'].max()
-                                    if close > past_30_max:
-                                        strategies_hit.append(("策略4", "tag-s4"))
+                if abs(recent_20_low - half_year_low) < 0.01:
+                    # 2. 近20个交易日收红（收盘价高于开盘价）的天数占70%以上
+                    recent_20_indices = range(total_days - 20, total_days)
+                    red_days = sum(1 for j in recent_20_indices 
+                                   if hist_full.loc[j, 'close'] > hist_full.loc[j, 'open'])
+                    red_ratio = red_days / 20.0
+                    
+                    if red_ratio >= 0.70:
+                        # 3. 收盘价高于5日均线
+                        if ma5 > 0 and close > ma5:
+                            # 4. 5日均线大于10日均线（短期金叉）
+                            ma10 = get_val('ma_10')
+                            if ma10 > 0 and ma5 > ma10:
+                                # 5. 近5日均量大于近20日均量
+                                avg_vol_5 = hist_full.iloc[total_days - 5 : total_days]['vol'].mean()
+                                avg_vol_20 = hist_full.iloc[total_days - 20 : total_days]['vol'].mean()
+                                if avg_vol_5 > avg_vol_20:
+                                    # 6. 近20个交易日无涨停
+                                    recent_20_lus = [j for j in lu_indices if j >= total_days - 20]
+                                    if len(recent_20_lus) == 0:
+                                        # 7. 最近3个交易日涨幅不大于10%
+                                        d_t3 = hist_full.iloc[-4]
+                                        pct_3d = (close / d_t3['close'] - 1) * 100
+                                        if pct_3d <= 10.0:
+                                            strategies_hit.append(("策略4", "tag-s4"))
 
             # ===================================================
-            # 策略5（涨停回踩整理）：
-            # 1、近15个交易日内有涨停
-            # 2、最近3天（T-2, T-1, T）每日涨跌幅在 -4% ~ +4% 之间
-            # 3、近3天的收盘价均在最近一次涨停当日最低价附近（-1.5% ~ +3%）
+            # 策略5（倍量启动信号）：
+            # 1、近30天内出现过至少1次交易量大于前一天3倍量的情况
+            # 2、当日收红且未涨停
+            # 3、收盘价高于5日均线和10日均线
+            # 4、最近一次倍量日必须是阳线（收盘>开盘）
+            # 5、近3个月无涨停
+            # 6、最近3个交易日涨幅不大于10%
+            # 7、近20个交易日内未出现过大阴线（跌幅大于6%）
+            # 8、近10个交易日涨幅不大于20%
             # ===================================================
-            if total_days >= 15:
-                # 1. 近15个交易日内有涨停
-                recent_15_start = max(0, total_days - 15)
-                recent_15_indices = range(recent_15_start, total_days)
-                recent_15_lus = [idx for idx in recent_15_indices if idx in lu_indices]
+            if total_days >= 65:
+                # 1. 近30天内出现过交易量大于前一天3倍量（至少1次）
+                recent_30_start = max(0, total_days - 31)
+                triple_vol_indices = []
+                for j in range(recent_30_start + 1, total_days):
+                    prev_vol = hist_full.loc[j - 1, 'vol']
+                    curr_vol = hist_full.loc[j, 'vol']
+                    if prev_vol > 0 and curr_vol > prev_vol * 3:
+                        triple_vol_indices.append(j)
                 
-                if recent_15_lus:
-                    last_lu_idx = recent_15_lus[-1]  # 最近一次涨停
-                    last_lu_low = hist_full.loc[last_lu_idx, 'low']
-                    
-                    # 2. 最近3天（T-2, T-1, T）每日涨跌幅在 -4% ~ +4% 之间
-                    recent_3_days_indices = range(total_days - 3, total_days)
-                    cond_range_ok = all(
-                        -4 <= hist_full.loc[j, 'pct_chg'] <= 4
-                        for j in recent_3_days_indices
-                    )
-                    
-                    # 3. 近3天的收盘价均在最近一次涨停当日最低价附近（-1.5% ~ +3%）
-                    if cond_range_ok and last_lu_low > 0:
-                        cond_near_low = all(
-                            last_lu_low * 0.985 <= hist_full.loc[j, 'close'] <= last_lu_low * 1.03
-                            for j in recent_3_days_indices
-                        )
-                        if cond_near_low:
-                            strategies_hit.append(("策略5", "tag-s5"))
+                if len(triple_vol_indices) >= 1:
+                    # 4. 最近一次倍量日必须是阳线（收盘>开盘）
+                    last_triple_idx = triple_vol_indices[-1]
+                    if hist_full.loc[last_triple_idx, 'close'] > hist_full.loc[last_triple_idx, 'open']:
+                        # 2. 当日收红且未涨停
+                        if pct_chg > 0 and (total_days - 1) not in lu_indices:
+                            # 3. 收盘价高于5日均线和10日均线
+                            ma10 = get_val('ma_10')
+                            if ma5 > 0 and ma10 > 0 and close > ma5 and close > ma10:
+                                # 5. 近3个月无涨停
+                                three_month_lus = [j for j in lu_indices if j >= total_days - 65]
+                                if len(three_month_lus) == 0:
+                                    # 6. 最近3个交易日涨幅不大于10%
+                                    d_t3 = hist_full.iloc[-4]
+                                    pct_3d = (close / d_t3['close'] - 1) * 100
+                                    if pct_3d <= 10.0:
+                                        # 7. 近20个交易日内未出现过大阴线（跌幅大于6%）
+                                        recent_20_pct = hist_full.iloc[total_days - 20 : total_days]['pct_chg']
+                                        if not any(pct <= -6.0 for pct in recent_20_pct):
+                                            # 8. 近10个交易日涨幅不大于20%
+                                            d_t10 = hist_full.iloc[-11]
+                                            pct_10d = (close / d_t10['close'] - 1) * 100
+                                            if pct_10d <= 20.0:
+                                                strategies_hit.append(("策略5", "tag-s5"))
 
 
             if strategies_hit:

@@ -65,7 +65,7 @@ def run_review(db, renderer):
     logger.info(">>> 正在获取宏观指数数据...")
     key_index_panel = calc.get_key_index_panel(date)
     global_index_panel = calc.get_global_index_panel(date)
-    north_money_flow = calc.get_north_money_flow(date)
+
     logger.info(">>> 正在计算板块-大盘关联分析...")
     sector_correlation = calc.get_sector_market_correlation(date)
 
@@ -90,7 +90,7 @@ def run_review(db, renderer):
         # 新增宏观数据
         "key_index_panel": key_index_panel,
         "global_index_panel": global_index_panel,
-        "north_money_flow": north_money_flow,
+
         "sector_correlation": sector_correlation,
     }
 

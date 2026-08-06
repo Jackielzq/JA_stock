@@ -262,22 +262,12 @@
         </div>
 
 
-        <!-- [新增] 北向资金流向 -->
-        <div class="card">
-            <div class="card-header" style="border-left-color:#e67e22;">💰 北向资金 (近20日每日净流入/流出)</div>
-            {% if north_money_flow %}
-            <div id="chart-north-flow" style="height: 300px;"></div>
-            {% else %}
-            <div style="padding:10px;color:#999;text-align:center;">北向资金数据暂不可用</div>
-            {% endif %}
-        </div>
-
         <!-- [新增] 板块-大盘风向标 -->
         <div class="card">
             <div class="card-header purple-border">🎯 板块-大盘象限分析 (相关性 x 10日动量)</div>
             <div class="section-desc">横轴=与上证关联度 | 纵轴=板块自身强弱 | 红=领先大盘 蓝=滞后大盘 | 圆圈大小=日均成交额</div>
             {% if sector_correlation %}
-            <div id="chart-correlation" style="height: 480px;"></div>
+            <div id="chart-correlation" style="height: 550px;"></div>
             {% else %}
             <div style="padding:10px;color:#999;text-align:center;">板块关联数据计算中或暂不可用</div>
             {% endif %}
@@ -686,42 +676,10 @@
         });
 
         // ==========================================
-        // 图表6: 北向资金净流入 (近20日)
-        // ==========================================
-        (function() {
-            const chartEl = document.getElementById("chart-north-flow");
-            if (!chartEl) return;
-            const rawNorthFlow = {{ north_money_flow | tojson }};
-            const nfDates = rawNorthFlow.map(item => item.date_str);
-            const nfValues = rawNorthFlow.map(item => item.north_money);
-            
-            const chartNorth = echarts.init(chartEl);
-            chartNorth.setOption({
-                animation: false,
-                title: { text: "北向资金每日净流入 (亿元)", textStyle: {fontSize: 14} },
-                tooltip: { trigger: "axis", axisPointer: { type: "cross" } },
-                grid: { left: "10%", right: "5%", bottom: "10%" },
-                xAxis: { type: "category", data: nfDates },
-                yAxis: { 
-                    type: "value", name: "亿元",
-                    axisLabel: { formatter: "{value}亿" }
-                },
-                series: [{
-                    name: "北向净流入", type: "bar",
-                    data: nfValues.map(v => ({
-                        value: v,
-                        itemStyle: { color: v >= 0 ? "#e06666" : "#5cba8a" }
-                    })),
-                    barWidth: "60%",
-                    label: { show: true, position: "top", formatter: "{c}" }
-                }]
-            });
-        })();
-
         // ==========================================
         // ==========================================
-        // 图表7: 板块-大盘象限散点图
         // ==========================================
+        // 图表7: 板块-大盘象限散点图 (象限分类+重要性高亮版)
         (function() {
             const chartEl = document.getElementById("chart-correlation");
             if (!chartEl) return;
@@ -731,72 +689,192 @@
             const medCorr = raw[0].med_corr || 0.5;
             const maxAmount = Math.max(...raw.map(s => s.avg_amount || 50), 1);
             
-            const scatterData = raw.map(s => {
-                const sz = Math.max(10, (s.avg_amount || 50) / maxAmount * 45);
-                let color = "#95a5a6";
-                if (s.lag_days > 0) color = "#e74c3c";
-                else if (s.lag_days < 0) color = "#2980b9";
-                const label = s.industry.length > 4 ? s.industry.substring(0,4) : s.industry;
-                return {
+            // 计算重要性 = 相关系数 * 相对成交额, 判定象限
+            raw.forEach(s => {
+                s.volRank = (s.avg_amount || 50) / maxAmount;
+                s.importance = s.correlation * s.volRank;
+                if (s.correlation >= medCorr && s.pct_10d >= 0) s.quadrant = "leader";
+                else if (s.correlation >= medCorr && s.pct_10d < 0) s.quadrant = "follower";
+                else if (s.correlation < medCorr && s.pct_10d >= 0) s.quadrant = "independent";
+                else s.quadrant = "fringe";
+            });
+            const maxImp = Math.max(...raw.map(s => s.importance), 0.01);
+            
+            // 按重要性排序, Top 10 高亮(显示标签+发光)
+            const sorted = [...raw].sort((a, b) => b.importance - a.importance);
+            const highlightSet = new Set(sorted.slice(0, Math.min(10, sorted.length)).map(s => s.industry));
+
+            // 象限配色
+            const quadColors = {
+                leader:      { fill: "rgba(231,76,60,",  border: "#c0392b", label: "\ud83d\udd25 领涨龙头(高关联+涨)" },
+                independent: { fill: "rgba(243,156,18,", border: "#d68910", label: "\ud83c\udf1f 独立行情(低关联+涨)" },
+                follower:    { fill: "rgba(41,128,185,", border: "#2471a3", label: "\ud83d\udd3b 随大盘回调(高关联+跌)" },
+                fringe:      { fill: "rgba(127,140,141,", border: "#7f8c8d", label: "\u26ab 弱势边缘(低关联+跌)" },
+            };
+
+            // 构建四个象限的 series
+            const quadSeries = { leader: [], independent: [], follower: [], fringe: [] };
+            
+            raw.forEach(s => {
+                const sz = Math.max(8, 10 + s.volRank * 50);
+                const impNorm = s.importance / maxImp;
+                const isHighlight = highlightSet.has(s.industry);
+                const alpha = isHighlight ? 0.85 : (0.25 + impNorm * 0.3);
+                const qc = quadColors[s.quadrant];
+                const color = qc.fill + alpha + ")";
+                const borderColor = isHighlight ? qc.border : (qc.fill + (alpha + 0.1) + ")");
+                const label = s.industry.length > 5 ? s.industry.substring(0,5) : s.industry;
+                
+                const point = {
                     value: [s.correlation, s.pct_10d],
                     name: s.industry,
                     symbolSize: sz,
-                    itemStyle: { color: color, opacity: 0.8, borderColor: color, borderWidth: 1 },
-                    label: { show: true, position: "top", fontSize: 10, formatter: label },
-                    _raw: s
+                    itemStyle: { 
+                        color: color, 
+                        borderColor: borderColor, 
+                        borderWidth: isHighlight ? 2.5 : 1,
+                        shadowBlur: isHighlight ? 10 : 0,
+                        shadowColor: isHighlight ? qc.fill + "0.40)" : "transparent"
+                    },
+                    label: {
+                        show: isHighlight,
+                        position: "top",
+                        fontSize: 12,
+                        fontWeight: "bold",
+                        color: "#2c3e50",
+                        distance: 5,
+                        formatter: label
+                    },
+                    emphasis: { 
+                        scale: 2.2, 
+                        label: { show: true, fontSize: 14, fontWeight: "bold" } 
+                    },
+                    _raw: s,
+                    _quadrant: s.quadrant
                 };
+                
+                quadSeries[s.quadrant].push(point);
             });
             
+            // 构建四个 series
+            const series = [];
+            const quadOrder = ["leader", "independent", "follower", "fringe"];
+            const legendData = [];
+            quadOrder.forEach(q => {
+                if (quadSeries[q].length > 0) {
+                    series.push({
+                        name: quadColors[q].label,
+                        type: "scatter",
+                        data: quadSeries[q],
+                        symbolSize: function(d) { return d.symbolSize; },
+                        emphasis: { scale: 2.2, label: { show: true, fontSize: 14, fontWeight: "bold" } }
+                    });
+                    legendData.push(quadColors[q].label);
+                }
+            });
+
             const chartCorr = echarts.init(chartEl);
             chartCorr.setOption({
                 animation: false,
+                backgroundColor: "#fdfdfd",
                 title: {
-                    text: "板块-大盘象限分布",
-                    subtext: "横轴=与上证关联度  |  纵轴=板块10日动量(%)",
-                    textStyle: {fontSize: 14},
-                    subtextStyle: {fontSize: 11, color: "#999"}
+                    text: "\u677f\u5757-\u5927\u76d8\u8c61\u9650\u5206\u6790",
+                    subtext: "\u6a2a\u8f74=\u4e0e\u4e0a\u8bc1\u5173\u8054\u5ea6  |  \u7eb5\u8f74=\u677f\u575710\u65e5\u52a8\u91cf(%)  |  \u6c14\u6ce1=\u65e5\u5747\u6210\u4ea4\u989d  |  \u9ad8\u4eae\u6807\u7b7e=\u9ad8\u5173\u8054+\u9ad8\u6210\u4ea4 TOP10",
+                    left: "center",
+                    textStyle: {fontSize: 15, fontWeight: 700, color: "#2c3e50"},
+                    subtextStyle: {fontSize: 11, color: "#95a5a6"},
                 },
                 tooltip: {
                     trigger: "item",
+                    backgroundColor: "rgba(255,255,255,0.95)",
+                    borderColor: "#ddd", borderWidth: 1,
+                    textStyle: {color: "#333", fontSize: 12},
                     formatter: function(p) {
                         const s = p.data._raw;
-                        let quad = "⚫ 弱势边缘";
-                        if (s.correlation >= medCorr && s.pct_10d >= 0) quad = "🔥 领涨龙头";
-                        else if (s.correlation >= medCorr && s.pct_10d < 0) quad = "🔻 随大盘回调";
-                        else if (s.correlation < medCorr && s.pct_10d >= 0) quad = "🌟 独立行情";
-                        return "<b>" + p.name + "</b> (" + quad + ")<br/>"
-                            + "关联度: " + s.correlation.toFixed(3) + " | " + s.lag_desc + "<br/>"
-                            + "10日动量: " + (s.pct_10d>=0?"+":"") + s.pct_10d + "%<br/>"
-                            + "日均成交: " + s.avg_amount + "亿";
+                        const impScore = (s.importance * 100).toFixed(1);
+                        let quad = "\u26ab \u5f31\u52bf\u8fb9\u7f18";
+                        if (s.correlation >= medCorr && s.pct_10d >= 0) quad = "\ud83d\udd25 \u9886\u6da8\u9f99\u5934";
+                        else if (s.correlation >= medCorr && s.pct_10d < 0) quad = "\ud83d\udd3b \u968f\u5927\u76d8\u56de\u8c03";
+                        else if (s.correlation < medCorr && s.pct_10d >= 0) quad = "\ud83c\udf1f \u72ec\u7acb\u884c\u60c5";
+                        return "<b style=\'font-size:14px;\'>" + p.name + "</b>"
+                            + "<br/>\u5173\u8054\u5ea6: " + s.correlation.toFixed(3) + "  |  " + s.lag_desc
+                            + "<br/>10\u65e5\u52a8\u91cf: <b>" + (s.pct_10d>=0?"+":"") + s.pct_10d + "%</b>"
+                            + "<br/>\u65e5\u5747\u6210\u4ea4: " + s.avg_amount + "\u4ebf"
+                            + "<br/>\u91cd\u8981\u6027: " + impScore + "%"
+                            + "<br/>\u8c61\u9650: " + quad;
                     }
                 },
-                grid: { left: "15%", right: "12%", bottom: "12%", top: "20%" },
+                grid: { left: "12%", right: "8%", bottom: "14%", top: "15%" },
+                dataZoom: [
+                    { type: "inside", xAxisIndex: 0, zoomOnMouseWheel: true, moveOnMouseMove: true },
+                    { type: "inside", yAxisIndex: 0, zoomOnMouseWheel: true, moveOnMouseMove: true },
+                    { type: "slider", xAxisIndex: 0, bottom: 32, height: 14, borderColor: "#ddd",
+                      fillerColor: "rgba(52,152,219,0.12)", handleStyle: {color: "#3498db"} },
+                    { type: "slider", yAxisIndex: 0, right: 8, width: 14, borderColor: "#ddd",
+                      fillerColor: "rgba(52,152,219,0.12)", handleStyle: {color: "#3498db"} },
+                ],
                 xAxis: {
-                    type: "value", name: "与上证指数相关系数",
-                    min: 0, max: 1,
-                    splitLine: { lineStyle: { type: "dashed", color: "#eee" } },
-                    axisLabel: { fontSize: 11 }
+                    type: "value", name: "\u4e0e\u4e0a\u8bc1\u6307\u6570\u76f8\u5173\u7cfb\u6570",
+                    min: function(v) { return Math.max(0, v.min - 0.05); },
+                    max: function(v) { return Math.min(1, v.max + 0.05); },
+                    nameTextStyle: {fontSize: 11, color: "#888"},
+                    splitLine: { lineStyle: { type: "dashed", color: "#e8e8e8" } },
+                    axisLabel: { fontSize: 11, color: "#888" },
+                    axisLine: { lineStyle: {color: "#bdc3c7"} },
                 },
                 yAxis: {
-                    type: "value", name: "板块10日动量 (%)",
-                    splitLine: { lineStyle: { type: "dashed", color: "#eee" } },
-                    axisLabel: { fontSize: 11, formatter: "{value}%" }
+                    type: "value", name: "\u677f\u575710\u65e5\u52a8\u91cf (%)",
+                    nameTextStyle: {fontSize: 11, color: "#888"},
+                    splitLine: { lineStyle: { type: "dashed", color: "#e8e8e8" } },
+                    axisLabel: { fontSize: 11, color: "#888", formatter: "{value}%" },
+                    axisLine: { lineStyle: {color: "#bdc3c7"} },
                 },
-                series: [{
-                    type: "scatter",
-                    data: scatterData,
-                    emphasis: { scale: 1.5, label: { show: true, fontSize: 14 } }
-                }],
-                // Quadrant labels
+                series: series,
+            });
+
+            // 追加象限参考线
+            chartCorr.setOption({
+                series: series.concat([
+                    {
+                        type: "line",
+                        markLine: {
+                            silent: true, symbol: "none",
+                            lineStyle: { type: "dashed", color: "#e74c3c", width: 1.5, opacity: 0.4 },
+                            data: [{ xAxis: medCorr, label: { formatter: "\u5173\u8054\u5ea6\u4e2d\u4f4d\u7ebf\n" + medCorr.toFixed(3), position: "end", fontSize: 10, color: "#c0392b" } }]
+                        },
+                        data: []
+                    },
+                    {
+                        type: "line",
+                        markLine: {
+                            silent: true, symbol: "none",
+                            lineStyle: { type: "dashed", color: "#7f8c8d", width: 1.5, opacity: 0.4 },
+                            data: [{ yAxis: 0, label: { formatter: "\u96f6\u8f74", position: "end", fontSize: 10, color: "#7f8c8d" } }]
+                        },
+                        data: []
+                    }
+                ])
+            });
+
+            // 象限标签（网格内部四角，不挡坐标轴）
+            chartCorr.setOption({
                 graphic: [
-                    { type: "text", left: "72%", top: "18%",
-                      style: { text: "🔥 领涨龙头", fill: "#c0392b", fontSize: 12, fontWeight: "bold" } },
-                    { type: "text", left: "22%", top: "18%",
-                      style: { text: "🌟 独立行情", fill: "#e67e22", fontSize: 12, fontWeight: "bold" } },
-                    { type: "text", left: "72%", top: "82%",
-                      style: { text: "🔻 随大盘回调", fill: "#2980b9", fontSize: 12, fontWeight: "bold" } },
-                    { type: "text", left: "22%", top: "82%",
-                      style: { text: "⚫ 弱势边缘", fill: "#7f8c8d", fontSize: 12, fontWeight: "bold" } },
+                    { type: "rect", left: "68%", top: "17%", shape: {width: 108, height: 22}, 
+                      style: {fill: "rgba(231,76,60,0.10)", stroke: "#e74c3c", lineWidth: 1, borderRadius: 4}, z: 2 },
+                    { type: "text", left: "69%", top: "17.5%",
+                      style: { text: "\ud83d\udd25 \u9886\u6da8\u9f99\u5934", fill: "#c0392b", fontSize: 11, fontWeight: "bold" }, z: 3 },
+                    { type: "rect", left: "16%", top: "17%", shape: {width: 108, height: 22},
+                      style: {fill: "rgba(243,156,18,0.10)", stroke: "#f39c12", lineWidth: 1, borderRadius: 4}, z: 2 },
+                    { type: "text", left: "17%", top: "17.5%",
+                      style: { text: "\ud83c\udf1f \u72ec\u7acb\u884c\u60c5", fill: "#d68910", fontSize: 11, fontWeight: "bold" }, z: 3 },
+                    { type: "rect", left: "68%", top: "82%", shape: {width: 108, height: 22},
+                      style: {fill: "rgba(41,128,185,0.10)", stroke: "#2980b9", lineWidth: 1, borderRadius: 4}, z: 2 },
+                    { type: "text", left: "69%", top: "82.5%",
+                      style: { text: "\ud83d\udd3b \u968f\u5927\u76d8\u56de\u8c03", fill: "#2471a3", fontSize: 11, fontWeight: "bold" }, z: 3 },
+                    { type: "rect", left: "16%", top: "82%", shape: {width: 108, height: 22},
+                      style: {fill: "rgba(127,140,141,0.10)", stroke: "#95a5a6", lineWidth: 1, borderRadius: 4}, z: 2 },
+                    { type: "text", left: "17%", top: "82.5%",
+                      style: { text: "\u26ab \u5f31\u52bf\u8fb9\u7f18", fill: "#7f8c8d", fontSize: 11, fontWeight: "bold" }, z: 3 },
                 ],
             });
         })();
