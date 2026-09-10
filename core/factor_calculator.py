@@ -16,6 +16,7 @@ class FactorCalculator:
         self._init_daily_data_columns()   # 自动检查并添加新字段
         self._init_financials_table()     # 初始化基础财务表
         self._init_rankings_table()       # 自动初始化综合排名表
+        self._init_index_daily_table()    # 初始化指数日线表
 
 
     def _load_stock_basic_cache(self):    
@@ -108,6 +109,28 @@ class FactorCalculator:
                 logging.info("成功创建并初始化 daily_rankings 综合排名数据表。")
         except Exception as e:
             logging.error(f"初始化 daily_rankings 表失败: {e}")
+
+    def _init_index_daily_table(self):
+        """初始化关键指数日线表，保存每日开盘、收盘、涨跌点数和涨跌幅。"""
+        try:
+            engine = self.db.get_engine()
+            metadata = MetaData()
+            Table(
+                'index_daily', metadata,
+                Column('id', Integer, primary_key=True, autoincrement=True),
+                Column('trade_date', SQLString(20), nullable=False, index=True),
+                Column('ts_code', SQLString(20), nullable=False, index=True),
+                Column('index_name', SQLString(50), nullable=False),
+                Column('open', Float),
+                Column('close', Float),
+                Column('change', Float),
+                Column('pct_chg', Float),
+                Column('processed_time', SQLString(50)),
+                Index('idx_index_date_code', 'trade_date', 'ts_code', unique=True)
+            )
+            metadata.create_all(engine)
+        except Exception as e:
+            logging.error(f"初始化 index_daily 表失败: {e}")
 
     def _get_data(self, sql, conn=None):
         try:
@@ -756,12 +779,18 @@ class FactorCalculator:
                 
             idx_data = index_map.get(date, {})
             score_res = self.calculate_sentiment_score(idx_data.get('pct_chg', 0), amount_yi, up_count, len(day_all_raw), limit_up_count, height, promo_rate, vol_pct, limit_down_count)
+            sh_open = float(idx_data.get('open', 0) or 0)
+            sh_close = float(idx_data.get('close', 0) or 0)
+            intraday_change = sh_close - sh_open if sh_open > 0 and sh_close > 0 else 0
+            intraday_pct = (intraday_change / sh_open * 100) if sh_open > 0 else 0
             
             history.append({
                 'date': date, 'date_str': f"{date[4:6]}-{date[6:]}", 'height': int(height), 'score': int(score_res['total']),
                 'sh_open': idx_data.get('open', 0), 'sh_close': idx_data.get('close', 0), 'sh_high': idx_data.get('high', 0),
                 'sh_low': idx_data.get('low', 0), 'sh_pct': idx_data.get('pct_chg', 0),
                 'sh_change': round(float(idx_data.get('change', 0)), 2), 'amount': amount_yi,
+                'sh_intraday_change': round(intraday_change, 2),
+                'sh_intraday_pct': round(intraday_pct, 2),
                 'vol_pct': round(vol_pct, 2), 'vol_chg_abs': round(amount_yi - prev_amount, 0),
                 'limit_up': limit_up_count, 'limit_down': limit_down_count,
                 'up_count': up_count, 'down_count': down_count, 'ad_ratio': round(up_count/down_count, 2) if down_count > 0 else 99,
@@ -996,7 +1025,7 @@ class FactorCalculator:
     # ============================================================
 
     def get_key_index_panel(self, date):
-        """获取A股关键指数面板数据（涨跌幅+10日迷你图数据）"""
+        """获取并保存A股关键指数面板数据（开收盘、涨跌点数、涨跌幅+10日迷你图）"""
         import tushare as ts
         from config import TUSHARE_TOKEN
         
@@ -1007,21 +1036,34 @@ class FactorCalculator:
             start_date = (datetime.strptime(date, "%Y%m%d") - timedelta(days=25)).strftime("%Y%m%d")
             
             index_codes = [
+                ("000001.SH", "上证指数"),
                 ("000016.SH", "上证50"), ("000300.SH", "沪深300"),
                 ("000905.SH", "中证500"), ("000852.SH", "中证1000"),
                 ("000688.SH", "科创50"), ("399006.SZ", "创业板指"),
             ]
             
             results = []
+            db_rows = []
             for code, name in index_codes:
                 try:
                     df = pro.index_daily(ts_code=code, start_date=start_date, end_date=date,
-                                         fields="ts_code,trade_date,close,pct_chg")
+                                         fields="ts_code,trade_date,open,close,change,pct_chg")
                     if df is None or df.empty: continue
                     df = df.sort_values("trade_date")
                     today = df[df["trade_date"] == date]
                     if today.empty: continue
                     today = today.iloc[0]
+
+                    db_rows.append({
+                        "trade_date": date,
+                        "ts_code": code,
+                        "index_name": name,
+                        "open": float(today.get("open", 0) or 0),
+                        "close": float(today.get("close", 0) or 0),
+                        "change": float(today.get("change", 0) or 0),
+                        "pct_chg": float(today.get("pct_chg", 0) or 0),
+                        "processed_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    })
                     
                     vals = df["pct_chg"].values
                     pct_5d = round(((1 + vals[-5:] / 100).prod() - 1) * 100, 2) if len(vals) >= 5 else round(((1 + vals / 100).prod() - 1) * 100, 2)
@@ -1035,7 +1077,9 @@ class FactorCalculator:
                     
                     results.append({
                         "name": name, "code": code,
+                        "open": round(float(today.get("open", 0) or 0), 2),
                         "close": round(float(today["close"]), 2),
+                        "change": round(float(today.get("change", 0) or 0), 2),
                         "pct_chg": round(float(today["pct_chg"]), 2),
                         "pct_5d": pct_5d,
                         "sparkline": spark_vals,
@@ -1045,6 +1089,14 @@ class FactorCalculator:
                     })
                 except Exception as e:
                     logging.warning(f"获取指数 {name}({code}) 失败: {e}")
+            if db_rows:
+                try:
+                    with self.db.get_engine().begin() as conn:
+                        conn.execute(text("DELETE FROM index_daily WHERE trade_date = :trade_date"), {"trade_date": date})
+                        pd.DataFrame(db_rows).to_sql('index_daily', conn, index=False, if_exists='append')
+                    logging.info(f"指数日线已写入 index_daily：{len(db_rows)} 条，日期 {date}")
+                except Exception as e:
+                    logging.error(f"写入 index_daily 失败: {e}")
             return results
         except Exception as e:
             logging.error(f"获取关键指数面板失败: {e}")

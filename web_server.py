@@ -353,7 +353,9 @@ def _run_in_thread(mode):
                 StockDataUpdater().run("update", 1)
                 ld = db.get_latest_date()
                 if ld:
-                    FactorCalculator(db).update_daily_factors(ld)
+                    calc = FactorCalculator(db)
+                    calc.update_daily_factors(ld)
+                    calc.get_key_index_panel(ld)
                 logger.info("[" + mode + "] 数据更新完成")
 
             elif mode == "news":
@@ -410,7 +412,9 @@ def _run_in_thread(mode):
                         StockDataUpdater().run("update", 1)
                         ld = db.get_latest_date()
                         if ld:
-                            FactorCalculator(db).update_daily_factors(ld)
+                            calc = FactorCalculator(db)
+                            calc.update_daily_factors(ld)
+                            calc.get_key_index_panel(ld)
                     elif sm == "review":
                         from main import run_review
                         _root = logging.getLogger()

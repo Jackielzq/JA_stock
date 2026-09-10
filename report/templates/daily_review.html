@@ -158,7 +158,7 @@
         <!-- 1. 核心指标仪表盘 -->
         <div class="dashboard-grid">
             <div class="dash-card"><div class="dash-label">市场情绪综合分</div><div class="dash-val score-val">{{ latest.score }}</div><div class="dash-sub">满分 100</div></div>
-            <div class="dash-card"><div class="dash-label">上证指数</div><div class="dash-val {{ 'up' if latest.sh_pct > 0 else 'down' }}">{{ "%.2f"|format(latest.sh_close) }}</div><div class="dash-sub"><span class="{{ 'up' if latest.sh_pct > 0 else 'down' }}">{{ "%+d"|format(latest.sh_change|int) }}  {{ "%+.2f"|format(latest.sh_pct) }}%</span></div></div>
+            <div class="dash-card"><div class="dash-label">上证指数</div><div class="dash-val {{ 'up' if latest.sh_intraday_pct > 0 else ('down' if latest.sh_intraday_pct < 0 else 'flat') }}">{{ "%.2f"|format(latest.sh_close) }}</div><div class="dash-sub"><span class="{{ 'up' if latest.sh_intraday_pct > 0 else ('down' if latest.sh_intraday_pct < 0 else 'flat') }}">{{ "%+.2f"|format(latest.sh_intraday_change) }}  {{ "%+.2f"|format(latest.sh_intraday_pct) }}%</span></div></div>
             <div class="dash-card"><div class="dash-label">两市总成交</div><div class="dash-val">{{ "%.0f"|format(latest.amount) }}亿</div><div class="dash-sub"><span class="{{ 'up' if latest.vol_pct > 0 else 'down' }}">{{ '放量' if latest.vol_pct > 0 else '缩量' }}{{ "%.0f"|format(latest.vol_chg_abs|abs) }}亿  {{ "%+.1f"|format(latest.vol_pct) }}%</span></div></div>
             <div class="dash-card">
                 <div class="dash-label">涨跌比 ({{ latest.ad_ratio }})</div>

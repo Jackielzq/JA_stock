@@ -1,4 +1,4 @@
-# core/strategies.py - 策略引擎模块 (V8.3: 策略4改为底部吸筹确认，策略5改为倍量启动信号)
+# core/strategies.py - 策略引擎模块
 
 import pandas as pd
 import numpy as np
@@ -35,9 +35,9 @@ class StrategyEngine:
         self.ALL_STRATEGIES = [
             "策略1",  #三连击突破
             "策略2",  #分歧弱转强
-            "策略3",  #半年天量突破
-            "策略4",  #底部吸筹确认
-            "策略5"   #倍量启动信号
+            "策略3",  #N字反包
+            "策略4",  #均线多头趋势
+            "策略5"   #双涨停平台确认
         ]
 
     def _init_selection_table(self):
@@ -229,18 +229,42 @@ class StrategyEngine:
             # ===================================================
             # 【全局通用前置拦截器】
             # 收盘价必须同时大于 60 日均线和 120 日均线
+            # 近 5 日平均换手率必须大于 3%
+            # 收盘价不得高于 30 元
+            # 总市值不得高于 300 亿元（total_mv 单位：万元）
             # ===================================================
             if not (ma60 > 0 and ma120 > 0 and close > ma60 and close > ma120):
                 continue
 
+            total_mv = get_val('total_mv')
+            if total_mv <= 0 or total_mv > 3000000:
+                continue
+
             hist_full = hist_df.reset_index(drop=True)
             total_days = len(hist_full)
+
+            if total_days < 5 or close > 30:
+                continue
+
+            recent_5_turnover = pd.to_numeric(
+                hist_full.tail(5)['turnover_rate'], errors='coerce'
+            ).fillna(0).mean()
+            if recent_5_turnover <= 3.0:
+                continue
             
 
             # 公共辅助变量：判定涨停与获取历史涨停索引
             is_startup = ts_code.startswith(('30', '68'))
             lu_limit = 19.5 if is_startup else 9.5
             lu_indices = hist_full.index[hist_full['pct_chg'] >= lu_limit].tolist()
+
+            # 主板股票近半年（120 个交易日）至少要出现过一次涨停
+            # 创业板不应用此限制
+            if not is_startup:
+                half_year_start = max(0, total_days - 120)
+                recent_half_year_lus = [j for j in lu_indices if j >= half_year_start]
+                if not recent_half_year_lus:
+                    continue
 
             strategies_hit = []
 
@@ -249,7 +273,6 @@ class StrategyEngine:
             current_vol = get_val('vol')
             turnover = get_val('turnover_rate')
             open_price = get_val('open')
-            total_mv = get_val('total_mv')
             ma5 = get_val('ma_5')
 
             # ===================================================
@@ -258,15 +281,14 @@ class StrategyEngine:
             # 2、连续三天上涨 (最低价逐渐升高、最高价逐渐升高)
             # 3、当天收盘价突破半年(60日)新高
             # 4、近三天无涨停
-            # 5、市值小于800亿 (total_mv单位为万元，300亿=3,000,000万)
-            # 6、股价不高于60
-            # 7、半年内(120日)涨停次数不超过4次
-            # 8、当日换手率大于5%
-            # 9、当天涨幅：主板<=7%，创业板<=12%
+            # 5、半年内(120日)涨停次数不超过4次
+            # 6、当日换手率大于5%
+            # 7、当天涨幅：主板<=7%，创业板<=12%
+            # 注：股价和市值上限由全局过滤统一控制（股价<=30元、总市值<=300亿元）
             # ===================================================
             if total_days >= 120:
                 limit_pct = 12.0 if is_startup else 7.0
-                if turnover > 5.0 and total_mv <= 8000000 and close <= 60.0 and pct_chg <= limit_pct:
+                if turnover > 5.0 and pct_chg <= limit_pct:
                     d_t0 = hist_full.iloc[-1]
                     d_t1 = hist_full.iloc[-2]
                     d_t2 = hist_full.iloc[-3]
@@ -294,177 +316,178 @@ class StrategyEngine:
             # ===================================================
             # 策略2（分歧弱转强）：
             # 1、T-2日涨停
-            # 2、T-1日成交量大于T-2
-            # 3、T-1日和当日都必须收红，且当日收盘价要高于T-1日
-            # 4、当日成交量不低于T-1日的70%
-            # 5、T-1日和当日收红（涨幅>0）且收阳（收盘>开盘，非真阴假阳），且未涨停
-            # 6、当日换手率不小于5%
+            # 2、T-1日收阳（收盘高于 T-2 收盘），且实体完全位于 T-2 涨停价上方
+            # 3、T日收阳（收盘高于 T-1 收盘），且实体完全位于 T-1 日实体上方
+            # 4、T-1日成交量大于T-2日
+            # 5、T日成交量不低于T-1日成交量的65%
+            # 6、T-1日不能涨停
             # ===================================================
             if total_days >= 3:
                 d_t0 = hist_full.iloc[-1]
                 d_t1 = hist_full.iloc[-2]
                 d_t2 = hist_full.iloc[-3]
-                
-                # 6. 当日换手率不小于5%
-                if turnover >= 5.0:
-                    # 1. T-2日涨停
-                    if d_t2['pct_chg'] >= lu_limit:
-                        # 2. T-1日成交量大于T-2
-                        if d_t1['vol'] > d_t2['vol']:
-                            # 5. T-1日和当日收红且收阳（非真阴假阳），且未涨停
-                            cond_t1_red = d_t1['pct_chg'] > 0
-                            cond_t1_yang = d_t1['close'] > d_t1['open']
-                            cond_t1_not_lu = d_t1['pct_chg'] < lu_limit
-                            
-                            cond_t0_red = d_t0['pct_chg'] > 0
-                            cond_t0_yang = d_t0['close'] > d_t0['open']
-                            cond_t0_not_lu = d_t0['pct_chg'] < lu_limit
-                            
-                            if (cond_t1_red and cond_t1_yang and cond_t1_not_lu and 
-                                cond_t0_red and cond_t0_yang and cond_t0_not_lu):
-                                # 3. 当日收盘价要高于T-1日
-                                if d_t0['close'] > d_t1['close']:
-                                    # 4. 当日成交量不低于T-1日的70%
-                                    if d_t0['vol'] >= d_t1['vol'] * 0.7:
-                                        strategies_hit.append(("策略2", "tag-s2"))
+
+                t2_limit_price = d_t2['close']
+                cond_t2_limit_up = d_t2['pct_chg'] >= lu_limit
+                cond_t1_bullish = d_t1['close'] > d_t2['close']
+                cond_t1_body_above_t2 = min(d_t1['open'], d_t1['close']) > t2_limit_price
+                cond_t0_bullish = d_t0['close'] > d_t1['close']
+                cond_t0_body_above_t1 = min(d_t0['open'], d_t0['close']) > d_t1['close']
+                cond_t1_volume = d_t1['vol'] > d_t2['vol']
+                cond_t0_volume = d_t0['vol'] >= d_t1['vol'] * 0.65
+                cond_t1_not_limit_up = d_t1['pct_chg'] < lu_limit
+
+                if (cond_t2_limit_up and cond_t1_bullish and cond_t1_body_above_t2
+                        and cond_t0_bullish and cond_t0_body_above_t1
+                        and cond_t1_volume and cond_t0_volume and cond_t1_not_limit_up):
+                    strategies_hit.append(("策略2", "tag-s2"))
 
             # ===================================================
-            # 策略3(半年天量刚性突破 & 180日新高):
-            # 1、当前放量（>昨日2倍）收涨（非涨停）
-            # 2、当日收盘价不能高于120日均线20%以上
-            # 3、收盘价高于5、10、20、60、120日均线
-            # 4、近5个交易日内涨幅不超过30%
-            # 5、当日收盘价创 180 日新高
-            # 6、近半年(120日)内涨停次数不超过3次
+            # 策略3（N字反包）：
+            # 1、近 5 日内首日涨停
+            # 2、涨停后连续 2~3 日收阴；涨停次日可放量，之后成交量逐日缩小
+            # 3、第 4 或第 5 日（当日）收阳
+            # 4、当日收盘价不低于首个涨停日的最低价
             # ===================================================
-            if total_days >= 180:
+            if total_days >= 5:
+                d_t0 = hist_full.iloc[-1]
                 d_t1 = hist_full.iloc[-2]
-                
-                # 1. 当前放量（>昨日2倍）收涨（非涨停）
-                cond_vol = current_vol > d_t1['vol'] * 2
-                cond_up = pct_chg > 0
-                cond_not_lu = pct_chg < lu_limit
-                
-                if cond_vol and cond_up and cond_not_lu:
-                    
-                    # 6. 半年(120日)内涨停次数不超过3次 (利用前置算好的 lu_indices 数组)
-                    half_year_lus = [j for j in lu_indices if j >= total_days - 120]
-                    if len(half_year_lus) <= 3:
-                        
-                        # 2. 当日收盘价不能高于120日均线20%以上
-                        if ma120 > 0 and close <= ma120 * 1.20:
-                        
-                            # 从当天数据库字段中读取现成的均线
-                            ma10 = get_val('ma_10')
-                            ma20 = get_val('ma_20')
-                            
-                            # 3. 收盘价高于5、10、20、60、120日均线
-                            if ma5 > 0 and ma10 > 0 and ma20 > 0 and close > ma5 and close > ma10 and close > ma20:
-                                
-                                # 4. 近5个交易日内涨幅不超过30%
-                                d_t5 = hist_full.iloc[-6] 
-                                pct_5d = (close / d_t5['close'] - 1) * 100
-                                
-                                if pct_5d <= 30.0:
-                                    
-                                    # 5. 当日收盘价创180日新高
-                                    start_180_idx = max(0, total_days - 181)
-                                    past_180_max = hist_full.iloc[start_180_idx : total_days - 1]['high'].max()
-                                    
-                                    if close > past_180_max:
-                                        strategies_hit.append(("策略3", "tag-s3"))
+                cond_t0_bullish = d_t0['close'] > d_t1['close']
 
+                def is_shrinking_bearish(day, previous_day):
+                    return (
+                        day['close'] < previous_day['close']
+                        and day['vol'] < previous_day['vol']
+                    )
 
-# ===================================================
-            # ===================================================
-            # 策略4（底部吸筹确认）：
-            # 1、最近20个交易日的最低价为近半年最低价
-            # 2、近20个交易日收红（收盘价高于开盘价）的天数占70%以上
-            # 3、收盘价高于5日均线
-            # 4、5日均线大于10日均线（短期金叉）
-            # 5、近5日均量大于近20日均量
-            # 6、近20个交易日无涨停
-            # 7、最近3个交易日涨幅不大于10%
-            # ===================================================
-            if total_days >= 125:
-                # 近半年数据范围（约125个交易日）
-                half_year_start = max(0, total_days - 125)
-                
-                # 1. 最近20个交易日的最低价为近半年最低价
-                recent_20_low = hist_full.iloc[total_days - 20 : total_days]['low'].min()
-                half_year_low = hist_full.iloc[half_year_start : total_days]['low'].min()
-                
-                if abs(recent_20_low - half_year_low) < 0.01:
-                    # 2. 近20个交易日收红（收盘价高于开盘价）的天数占70%以上
-                    recent_20_indices = range(total_days - 20, total_days)
-                    red_days = sum(1 for j in recent_20_indices 
-                                   if hist_full.loc[j, 'close'] > hist_full.loc[j, 'open'])
-                    red_ratio = red_days / 20.0
-                    
-                    if red_ratio >= 0.70:
-                        # 3. 收盘价高于5日均线
-                        if ma5 > 0 and close > ma5:
-                            # 4. 5日均线大于10日均线（短期金叉）
-                            ma10 = get_val('ma_10')
-                            if ma10 > 0 and ma5 > ma10:
-                                # 5. 近5日均量大于近20日均量
-                                avg_vol_5 = hist_full.iloc[total_days - 5 : total_days]['vol'].mean()
-                                avg_vol_20 = hist_full.iloc[total_days - 20 : total_days]['vol'].mean()
-                                if avg_vol_5 > avg_vol_20:
-                                    # 6. 近20个交易日无涨停
-                                    recent_20_lus = [j for j in lu_indices if j >= total_days - 20]
-                                    if len(recent_20_lus) == 0:
-                                        # 7. 最近3个交易日涨幅不大于10%
-                                        d_t3 = hist_full.iloc[-4]
-                                        pct_3d = (close / d_t3['close'] - 1) * 100
-                                        if pct_3d <= 10.0:
-                                            strategies_hit.append(("策略4", "tag-s4"))
+                def is_bearish(day, previous_day):
+                    return day['close'] < previous_day['close']
+
+                n_reversal_hit = False
+                # 4 日形态：涨停 + 阴线（可放量）+ 缩量阴 + 当日收阳
+                first_day_4 = hist_full.iloc[-4]
+                pullback_4_1 = hist_full.iloc[-3]
+                pullback_4_2 = hist_full.iloc[-2]
+                if (
+                    first_day_4['pct_chg'] >= lu_limit
+                    and is_bearish(pullback_4_1, first_day_4)
+                    and is_shrinking_bearish(pullback_4_2, pullback_4_1)
+                    and cond_t0_bullish
+                    and d_t0['close'] >= first_day_4['low']
+                ):
+                    n_reversal_hit = True
+
+                # 5 日形态：涨停 + 阴线（可放量）+ 缩量阴 + 缩量阴 + 当日收阳
+                if not n_reversal_hit:
+                    first_day_5 = hist_full.iloc[-5]
+                    pullback_5_1 = hist_full.iloc[-4]
+                    pullback_5_2 = hist_full.iloc[-3]
+                    pullback_5_3 = hist_full.iloc[-2]
+                    if (
+                        first_day_5['pct_chg'] >= lu_limit
+                        and is_bearish(pullback_5_1, first_day_5)
+                        and is_shrinking_bearish(pullback_5_2, pullback_5_1)
+                        and is_shrinking_bearish(pullback_5_3, pullback_5_2)
+                        and cond_t0_bullish
+                        and d_t0['close'] >= first_day_5['low']
+                    ):
+                        n_reversal_hit = True
+
+                if n_reversal_hit:
+                    strategies_hit.append(("策略3", "tag-s3"))
 
             # ===================================================
-            # 策略5（倍量启动信号）：
-            # 1、近30天内出现过至少1次交易量大于前一天3倍量的情况
-            # 2、当日收红且未涨停
-            # 3、收盘价高于5日均线和10日均线
-            # 4、最近一次倍量日必须是阳线（收盘>开盘）
-            # 5、近3个月无涨停
-            # 6、最近3个交易日涨幅不大于10%
-            # 7、近20个交易日内未出现过大阴线（跌幅大于6%）
-            # 8、近10个交易日涨幅不大于20%
+            # 策略4（均线多头趋势）：
+            # 1、收盘价高于5日均线
+            # 2、5日均线 > 10日均线 > 20日均线
+            # 3、连续5天收盘价均在各自5日均线上方
+            # 4、近5个交易日未出现主板涨幅>=5%、创业板涨幅>=10%的交易日
+            # 5、最近5天的最低价均高于各自前一日最低价
             # ===================================================
-            if total_days >= 65:
-                # 1. 近30天内出现过交易量大于前一天3倍量（至少1次）
-                recent_30_start = max(0, total_days - 31)
-                triple_vol_indices = []
-                for j in range(recent_30_start + 1, total_days):
-                    prev_vol = hist_full.loc[j - 1, 'vol']
-                    curr_vol = hist_full.loc[j, 'vol']
-                    if prev_vol > 0 and curr_vol > prev_vol * 3:
-                        triple_vol_indices.append(j)
-                
-                if len(triple_vol_indices) >= 1:
-                    # 4. 最近一次倍量日必须是阳线（收盘>开盘）
-                    last_triple_idx = triple_vol_indices[-1]
-                    if hist_full.loc[last_triple_idx, 'close'] > hist_full.loc[last_triple_idx, 'open']:
-                        # 2. 当日收红且未涨停
-                        if pct_chg > 0 and (total_days - 1) not in lu_indices:
-                            # 3. 收盘价高于5日均线和10日均线
-                            ma10 = get_val('ma_10')
-                            if ma5 > 0 and ma10 > 0 and close > ma5 and close > ma10:
-                                # 5. 近3个月无涨停
-                                three_month_lus = [j for j in lu_indices if j >= total_days - 65]
-                                if len(three_month_lus) == 0:
-                                    # 6. 最近3个交易日涨幅不大于10%
-                                    d_t3 = hist_full.iloc[-4]
-                                    pct_3d = (close / d_t3['close'] - 1) * 100
-                                    if pct_3d <= 10.0:
-                                        # 7. 近20个交易日内未出现过大阴线（跌幅大于6%）
-                                        recent_20_pct = hist_full.iloc[total_days - 20 : total_days]['pct_chg']
-                                        if not any(pct <= -6.0 for pct in recent_20_pct):
-                                            # 8. 近10个交易日涨幅不大于20%
-                                            d_t10 = hist_full.iloc[-11]
-                                            pct_10d = (close / d_t10['close'] - 1) * 100
-                                            if pct_10d <= 20.0:
-                                                strategies_hit.append(("策略5", "tag-s5"))
+            if total_days >= 20:
+                close_series = pd.to_numeric(hist_full['close'], errors='coerce')
+                ma_5_series = close_series.rolling(window=5).mean()
+                ma_10_series = close_series.rolling(window=10).mean()
+                ma_20_series = close_series.rolling(window=20).mean()
+
+                current_ma5 = ma_5_series.iloc[-1]
+                current_ma10 = ma_10_series.iloc[-1]
+                current_ma20 = ma_20_series.iloc[-1]
+                cond_close_above_ma5 = close > current_ma5
+                cond_ma_bullish = current_ma5 > current_ma10 > current_ma20
+
+                recent_5_closes = close_series.tail(5)
+                recent_5_ma5 = ma_5_series.tail(5)
+                cond_five_days_above_ma5 = (
+                    recent_5_ma5.notna().all()
+                    and (recent_5_closes > recent_5_ma5).all()
+                )
+
+                rapid_rise_limit = 10.0 if is_startup else 5.0
+                recent_5_pct = pd.to_numeric(
+                    hist_full.tail(5)['pct_chg'], errors='coerce'
+                ).fillna(0)
+                cond_no_rapid_rise = (recent_5_pct < rapid_rise_limit).all()
+
+                recent_6_lows = pd.to_numeric(
+                    hist_full.tail(6)['low'], errors='coerce'
+                )
+                cond_five_days_higher_lows = (
+                    recent_6_lows.notna().all()
+                    and (recent_6_lows.iloc[1:].to_numpy()
+                         > recent_6_lows.iloc[:-1].to_numpy()).all()
+                )
+
+                if (cond_close_above_ma5 and cond_ma_bullish
+                        and cond_five_days_above_ma5 and cond_no_rapid_rise
+                        and cond_five_days_higher_lows):
+                    strategies_hit.append(("策略4", "tag-s4"))
+
+            # ===================================================
+            # 策略5（双涨停平台确认）：
+            # 1、最近一次涨停发生在近 5 个交易日内
+            # 2、最近一次涨停与上一次涨停至少间隔 3 个月（60 个交易日）
+            # 3、两次涨停价的差异不大于 20%
+            # 4、两次涨停之间的整体振幅不大于 50%
+            # 5、当日收盘价不低于最近一次涨停日的最低价
+            # ===================================================
+            if len(lu_indices) >= 2:
+                previous_limit_idx = lu_indices[-2]
+                latest_limit_idx = lu_indices[-1]
+                previous_limit = hist_full.iloc[previous_limit_idx]
+                latest_limit = hist_full.iloc[latest_limit_idx]
+
+                # 1. 最近一次涨停必须发生在近 5 个交易日内（含当日）
+                cond_recent_limit = (total_days - 1 - latest_limit_idx) <= 4
+
+                # 2. 两次涨停至少间隔 60 个交易日
+                cond_interval = (latest_limit_idx - previous_limit_idx) >= 60
+
+                # 3. 以涨停日收盘价作为涨停价，限制两次价格偏差
+                previous_limit_price = previous_limit['close']
+                latest_limit_price = latest_limit['close']
+                price_diff_pct = (
+                    abs(latest_limit_price - previous_limit_price) / previous_limit_price * 100
+                    if previous_limit_price > 0 else float('inf')
+                )
+                cond_price_diff = price_diff_pct <= 20.0
+
+                # 4. 统计两次涨停日（含）之间的最高价与最低价，计算整体振幅
+                interval_df = hist_full.iloc[previous_limit_idx : latest_limit_idx + 1]
+                interval_low = interval_df['low'].min()
+                interval_high = interval_df['high'].max()
+                amplitude_pct = (
+                    (interval_high - interval_low) / interval_low * 100
+                    if interval_low > 0 else float('inf')
+                )
+                cond_amplitude = amplitude_pct <= 50.0
+
+                # 5. 当日收盘不低于最近一次涨停日的最低价
+                cond_close_support = close >= latest_limit['low']
+
+                if (cond_recent_limit and cond_interval and cond_price_diff
+                        and cond_amplitude and cond_close_support):
+                    strategies_hit.append(("策略5", "tag-s5"))
 
 
             if strategies_hit:
@@ -530,159 +553,290 @@ class StrategyEngine:
         logger.info(f"入库成功: {len(df_db)} 条")
 
     def run_backtest(self):
-        logger.info("--- 启动历史回测引擎---")
-        history = pd.read_sql(text(f"SELECT * FROM {self.selection_table} ORDER BY trade_date ASC"), self.engine)
-        if history.empty: return [], [], [], []
+        """以可执行交易口径生成回测数据。
 
-        history = history[~history['ts_code'].str.startswith(('8', '4', '9'))]
-        history = history[~history['stock_name'].str.contains('ST')]
-        
+        信号在 T 日收盘后形成，统一以 T+1 开盘买入；各持有期均在最后一日收盘卖出。
+        同一股票 10 个交易日内的重复信号只保留首个，避免把同一段行情重复计为成功交易。
+        """
+        logger.info("--- 启动真实交易口径回测引擎---")
+        # 保持空报告也能被模板安全渲染，方便数据库尚无历史信号时直接打开报告。
+        empty = {
+            'summary': [], 'holding_summary': [], 'trades': [],
+            'assumptions': {
+                'buy_cost': 0.08, 'sell_cost': 0.08, 'cooldown': 10,
+                'raw_signals': 0, 'merged_signals': 0, 'duplicate_skipped': 0, 'eligible_trades': 0,
+            },
+            'portfolio': {
+                'period': 5, 'trade_count': 0, 'nav': None, 'total_return': None, 'max_drawdown': None,
+                'benchmark_nav': None, 'benchmark_return': None, 'benchmark_days': 0,
+                'strategy_chart_points': '', 'benchmark_chart_points': '',
+                'start_date': '-', 'end_date': '-',
+            },
+        }
+        history = pd.read_sql(text(f"SELECT * FROM {self.selection_table} ORDER BY trade_date ASC, id ASC"), self.engine)
+        if history.empty:
+            return empty
+
+        history['trade_date'] = history['trade_date'].astype(str)
+        history = history[~history['ts_code'].astype(str).str.startswith(('8', '4', '9'))]
+        history = history[~history['stock_name'].fillna('').str.contains('ST', case=False)]
+        if history.empty:
+            return empty
+
         min_date = history['trade_date'].min()
-        logger.info(f"预加载价格数据 (从 {min_date} 至今)...")
-        p_sql = text(f"SELECT trade_date, ts_code, close FROM daily_data WHERE trade_date >= '{min_date}'")
-        price_df = pd.read_sql(p_sql, self.engine)
-        price_matrix = price_df.pivot(index='trade_date', columns='ts_code', values='close')
-        all_dates = sorted(price_matrix.index.tolist())
+        logger.info(f"预加载回测行情（从 {min_date} 至今）...")
+        prices = pd.read_sql(text(
+            f"SELECT trade_date, ts_code, open, high, low, close FROM {DAILY_DATA_TABLE} "
+            f"WHERE trade_date >= '{min_date}'"
+        ), self.engine)
+        if prices.empty:
+            return empty
+        prices['trade_date'] = prices['trade_date'].astype(str)
+        all_dates = sorted(prices['trade_date'].unique().tolist())
         date_to_idx = {d: i for i, d in enumerate(all_dates)}
-        
-        logger.info("正在计算全量历史胜率...")
-        summary_stats = {s: {'total':0, 'wins':0, 'sum_1d':0, 'dates':{}} for s in self.ALL_STRATEGIES}
-        trend_map = {} 
-        stock_total_counts = {} 
+        matrices = {
+            field: prices.pivot(index='trade_date', columns='ts_code', values=field).reindex(all_dates)
+            for field in ('open', 'high', 'low', 'close')
+        }
 
-        total_recs = len(history)
-        for i, row in history.iterrows():
-            sel_date = row['trade_date']
-            code = row['ts_code']
-            strat = row['strategy_name']
-            init_p = row['initial_price']
-            
-            stock_total_counts[code] = stock_total_counts.get(code, 0) + 1
+        # 同日同股多个策略信号合并为一笔候选交易，保留所有触发策略用于展示。
+        grouped = history.sort_values(['trade_date', 'ts_code', 'total_score'], ascending=[True, True, False]).groupby(
+            ['trade_date', 'ts_code'], as_index=False
+        )
+        candidates, raw_counts = [], history['strategy_name'].value_counts().to_dict()
+        for (_, _), group in grouped:
+            primary = group.iloc[0].to_dict()
+            primary['strategies'] = list(dict.fromkeys(group['strategy_name'].dropna().tolist()))
+            candidates.append(primary)
 
-            if sel_date not in date_to_idx: continue
-            curr_idx = date_to_idx[sel_date]
-            target_idx_1d = curr_idx + 1
-            
-            ret_1d = 0.0
-            is_win = 0
-            has_valid_data = False
-            
-            if target_idx_1d < len(all_dates):
-                date_1d = all_dates[target_idx_1d]
-                if code in price_matrix.columns:
-                    p_1d = price_matrix.at[date_1d, code]
-                    if p_1d is not None and not pd.isna(p_1d) and init_p > 0:
-                        ret_1d = (p_1d - init_p) / init_p * 100
-                        is_win = 1 if ret_1d > 0 else 0
-                        has_valid_data = True
+        # 10 个交易日冷却：同一股票的相邻重复信号不重复开仓。
+        candidates.sort(key=lambda x: (x['trade_date'], -float(x.get('total_score') or 0)))
+        eligible, last_signal_idx, skipped_duplicates = [], {}, 0
+        for item in candidates:
+            idx = date_to_idx.get(item['trade_date'])
+            if idx is None:
+                continue
+            previous = last_signal_idx.get(item['ts_code'])
+            if previous is not None and idx - previous < 10:
+                skipped_duplicates += 1
+                continue
+            last_signal_idx[item['ts_code']] = idx
+            item['signal_idx'] = idx
+            eligible.append(item)
 
-            if strat not in summary_stats: 
-                summary_stats[strat] = {'total':0, 'wins':0, 'sum_1d':0.0, 'dates':{}}
-            
-            if has_valid_data:
-                summary_stats[strat]['total'] += 1
-                summary_stats[strat]['wins'] += is_win
-                summary_stats[strat]['sum_1d'] += ret_1d
-                
-                if sel_date not in trend_map: trend_map[sel_date] = {}
-                if strat not in trend_map[sel_date]: trend_map[sel_date][strat] = {'total':0, 'wins':0}
-                trend_map[sel_date][strat]['total'] += 1
-                trend_map[sel_date][strat]['wins'] += is_win
+        buy_cost = 0.0008       # 单边：佣金、滑点等统一的保守估计
+        sell_cost = 0.0008
+        holding_periods = [1, 3, 5, 10, 20]
 
-        summary_list = []
-        for name in self.ALL_STRATEGIES + [k for k in summary_stats.keys() if k not in self.ALL_STRATEGIES]:
-            if name not in summary_stats: continue
-            data = summary_stats[name]
-            win_rate = round(data['wins']/data['total']*100, 1) if data['total']>0 else 0
-            avg_1d = round(data['sum_1d']/data['total'], 2) if data['total']>0 else 0
-            summary_list.append({
-                'name': name, 'count': data['total'], 'wins': data['wins'],
-                'win_rate_val': win_rate, 'win_rate_str': f"{win_rate}%", 'avg_1d': avg_1d
-            })
-
-        sorted_trend_dates = sorted(trend_map.keys(), reverse=True)[:10]
-        matrix_dates = sorted(sorted_trend_dates) 
-        matrix_data = []
-        for strat in self.ALL_STRATEGIES:
-            row = {'name': strat, 'cells': []}
-            for d in matrix_dates:
-                if d in trend_map and strat in trend_map[d]:
-                    s_data = trend_map[d][strat]
-                    cnt = s_data['total']
-                    val = round(s_data['wins']/cnt*100, 0) if cnt > 0 else 0
-                    row['cells'].append({'has_data': True, 'str': f"{val:.0f}%", 'val': val, 'wins': s_data['wins'], 'total': cnt})
-                else:
-                    row['cells'].append({'has_data': False})
-            matrix_data.append(row)
-
-        logger.info("正在生成最近10日个股明细...")
-        all_unique_dates = sorted(history['trade_date'].unique(), reverse=True)
-        display_dates = all_unique_dates[1:11] 
-        
-        final_stock_list = []
-        display_history = history[history['trade_date'].isin(display_dates)].copy()
-        
-        for i, row in display_history.iterrows():
-            sel_date = row['trade_date']
-            code = row['ts_code']
-            strat_name = row['strategy_name']
-            init_p = row['initial_price']
-            
-            if sel_date not in date_to_idx: continue
-            start_idx = date_to_idx[sel_date]
-            
-            current_price = init_p
-            if code in price_matrix.columns:
-                last_valid = price_matrix[code].dropna()
-                if not last_valid.empty:
-                    current_price = last_valid.iloc[-1]
-            
-            def get_ret(n_days):
-                target = start_idx + n_days
-                if target < len(all_dates):
-                    d = all_dates[target]
-                    if code in price_matrix.columns:
-                        p = price_matrix.at[d, code]
-                        if p and not pd.isna(p):
-                            return (p - init_p) / init_p * 100
+        def number(matrix, date, code):
+            if code not in matrix.columns or date not in matrix.index:
                 return None
+            value = matrix.at[date, code]
+            return float(value) if pd.notna(value) and float(value) > 0 else None
 
-            ret_1d = get_ret(1)
-            ret_5d = get_ret(5)
-            ret_10d = get_ret(10)
-            
-            is_win = (ret_1d > 0) if ret_1d is not None else False
-            
-            market_val = row.get('market')
-            if not market_val: market_val = infer_market(code)
-            
-            total_cnt = stock_total_counts.get(code, 1)
+        def pct(value):
+            return f"{value:+.2f}%" if value is not None else '-'
 
-            final_stock_list.append({
-                'ts_code': code,
-                'stock_name': row['stock_name'],
-                'first_date': sel_date,      
-                'market': market_val,
-                'industry': row.get('industry', '-'),
-                'strategies_list': [strat_name], 
-                'selection_count': total_cnt,
-                'total_score': row.get('total_score', 0),
-                'total_mv': row.get('total_mv', 0),
-                'initial_price': init_p,
-                'latest_price': current_price,
-                'ret_1d': f"{ret_1d:.2f}%" if ret_1d is not None else "-",
-                'ret_5d': f"{ret_5d:.0f}%" if ret_5d is not None else "-",
-                'ret_10d': f"{ret_10d:.0f}%" if ret_10d is not None else "-",
-                'style_1d': 'win' if ret_1d and ret_1d > 0 else ('loss' if ret_1d and ret_1d < 0 else ''),
-                'is_win': is_win
+        def make_trade(item):
+            signal_idx = item['signal_idx']
+            entry_idx = signal_idx + 1
+            if entry_idx >= len(all_dates):
+                return None
+            code = item['ts_code']
+            entry_date = all_dates[entry_idx]
+            entry_price = number(matrices['open'], entry_date, code)
+            if not entry_price:
+                return None
+            returns, paths = {}, {}
+            for days in holding_periods:
+                exit_idx = entry_idx + days - 1
+                if exit_idx >= len(all_dates):
+                    continue
+                exit_date = all_dates[exit_idx]
+                exit_price = number(matrices['close'], exit_date, code)
+                if not exit_price:
+                    continue
+                window_dates = all_dates[entry_idx:exit_idx + 1]
+                lows = [number(matrices['low'], d, code) for d in window_dates]
+                highs = [number(matrices['high'], d, code) for d in window_dates]
+                closes = [number(matrices['close'], d, code) for d in window_dates]
+                if any(v is None for v in lows + highs + closes):
+                    continue  # 停牌或缺失行情不把收益当成可执行结果
+                gross = (exit_price / entry_price - 1) * 100
+                net = ((exit_price / entry_price) * (1 - buy_cost) * (1 - sell_cost) - 1) * 100
+                mark_path = [entry_price] + closes
+                running_high = np.maximum.accumulate(mark_path)
+                drawdown = (np.asarray(mark_path) / running_high - 1).min() * 100
+                returns[days] = {
+                    'gross': gross, 'net': net, 'exit_date': exit_date, 'exit_price': exit_price,
+                    'mae': (min(lows) / entry_price - 1) * 100,
+                    'mfe': (max(highs) / entry_price - 1) * 100,
+                    'drawdown': drawdown,
+                }
+                paths[days] = {'dates': window_dates, 'closes': closes}
+            if not returns:
+                return None
+            return {
+                'signal_date': item['trade_date'], 'entry_date': entry_date, 'entry_idx': entry_idx,
+                'ts_code': code, 'stock_name': item.get('stock_name', '-'),
+                'strategies': item['strategies'], 'industry': item.get('industry', '-') or '-',
+                'market': item.get('market') or infer_market(code), 'score': float(item.get('total_score') or 0),
+                'entry_price': entry_price, 'returns': returns, 'paths': paths,
+            }
+
+        trades = [trade for item in eligible if (trade := make_trade(item))]
+
+        def metric(values):
+            if not values:
+                return {'count': 0, 'win_rate': None, 'avg': None, 'median': None, 'profit_factor': None, 'payoff': None}
+            arr = np.asarray(values, dtype=float)
+            gains, losses = arr[arr > 0], arr[arr < 0]
+            profit_factor = gains.sum() / abs(losses.sum()) if len(losses) and abs(losses.sum()) > 0 else None
+            payoff = gains.mean() / abs(losses.mean()) if len(gains) and len(losses) else None
+            return {
+                'count': len(arr), 'win_rate': (arr > 0).mean() * 100, 'avg': arr.mean(), 'median': np.median(arr),
+                'profit_factor': profit_factor, 'payoff': payoff,
+            }
+
+        summary = []
+        for strategy in self.ALL_STRATEGIES:
+            strategy_trades = [t for t in trades if strategy in t['strategies']]
+            item = {'name': strategy, 'raw_signals': int(raw_counts.get(strategy, 0)), 'executed': len(strategy_trades), 'periods': {}}
+            for days in holding_periods:
+                item['periods'][days] = metric([t['returns'][days]['net'] for t in strategy_trades if days in t['returns']])
+            summary.append(item)
+
+        holding_summary = []
+        for days in holding_periods:
+            holding_summary.append({'days': days, **metric([t['returns'][days]['net'] for t in trades if days in t['returns']])})
+
+        # 合并组合：每笔最多使用 20% 资金，最多 5 个并行仓位；以 5 日持有期为主口径。
+        portfolio_period = 5
+        candidates_5d = [t for t in trades if portfolio_period in t['returns']]
+        candidates_5d.sort(key=lambda t: (t['entry_idx'], -t['score']))
+        active, portfolio_trades = [], []
+        for trade in candidates_5d:
+            active = [t for t in active if t['exit_idx'] >= trade['entry_idx']]
+            if len(active) >= 5:
+                continue
+            trade['exit_idx'] = date_to_idx[trade['returns'][portfolio_period]['exit_date']]
+            active.append(trade)
+            portfolio_trades.append(trade)
+
+        portfolio_returns = {}
+        for trade in portfolio_trades:
+            path = trade['paths'][portfolio_period]
+            for position, date in enumerate(path['dates']):
+                close = path['closes'][position]
+                if position == 0:
+                    day_return = (close / trade['entry_price']) * (1 - buy_cost) - 1
+                else:
+                    day_return = close / path['closes'][position - 1] - 1
+                if position == len(path['dates']) - 1:
+                    day_return = (1 + day_return) * (1 - sell_cost) - 1
+                portfolio_returns[date] = portfolio_returns.get(date, 0) + day_return / 5
+        nav, peak, max_dd, nav_points = 1.0, 1.0, 0.0, []
+        for date in sorted(portfolio_returns):
+            nav *= 1 + portfolio_returns[date]
+            peak = max(peak, nav)
+            max_dd = min(max_dd, nav / peak - 1)
+            nav_points.append({'date': date, 'nav': nav, 'return': portfolio_returns[date] * 100})
+
+        # 基准使用沪深300。首次回测时补齐所需历史，之后直接复用 index_daily 缓存。
+        benchmark = {}
+        try:
+            portfolio_start = nav_points[0]['date'] if nav_points else None
+            portfolio_end = nav_points[-1]['date'] if nav_points else None
+            index_df = pd.read_sql(text(
+                "SELECT trade_date, close FROM index_daily WHERE ts_code = '000300.SH' "
+                f"AND trade_date >= '{portfolio_start}' AND trade_date <= '{portfolio_end}' ORDER BY trade_date"
+            ), self.engine) if portfolio_start else pd.DataFrame()
+
+            # 当前 index_daily 过去只按日写入，历史报告第一次生成时需补齐基准区间。
+            if portfolio_start and len(index_df) < max(2, len(nav_points) * 0.8):
+                import tushare as ts
+                from config import TUSHARE_TOKEN
+                df_benchmark = ts.pro_api(TUSHARE_TOKEN).index_daily(
+                    ts_code='000300.SH', start_date=portfolio_start, end_date=portfolio_end,
+                    fields='ts_code,trade_date,open,close,change,pct_chg'
+                )
+                if df_benchmark is not None and not df_benchmark.empty:
+                    df_benchmark['index_name'] = '沪深300'
+                    df_benchmark['processed_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    records = df_benchmark[['trade_date', 'ts_code', 'index_name', 'open', 'close', 'change', 'pct_chg', 'processed_time']].to_dict('records')
+                    upsert = text("""
+                        INSERT INTO index_daily (trade_date, ts_code, index_name, open, close, `change`, pct_chg, processed_time)
+                        VALUES (:trade_date, :ts_code, :index_name, :open, :close, :change, :pct_chg, :processed_time)
+                        ON DUPLICATE KEY UPDATE open=VALUES(open), close=VALUES(close), `change`=VALUES(`change`),
+                            pct_chg=VALUES(pct_chg), processed_time=VALUES(processed_time)
+                    """)
+                    with self.engine.begin() as conn:
+                        conn.execute(upsert, records)
+                    index_df = pd.read_sql(text(
+                        "SELECT trade_date, close FROM index_daily WHERE ts_code = '000300.SH' "
+                        f"AND trade_date >= '{portfolio_start}' AND trade_date <= '{portfolio_end}' ORDER BY trade_date"
+                    ), self.engine)
+                    logger.info(f"沪深300基准历史已补齐：{len(records)} 个交易日")
+            if not index_df.empty:
+                index_df['trade_date'] = index_df['trade_date'].astype(str)
+                index_df = index_df.set_index('trade_date')['close'].astype(float)
+                benchmark = index_df.to_dict()
+        except Exception as exc:
+            logger.warning(f"读取沪深300基准失败: {exc}")
+        common_points = [point for point in nav_points if point['date'] in benchmark]
+        benchmark_points = []
+        if common_points:
+            benchmark_start = benchmark[common_points[0]['date']]
+            benchmark_points = [
+                {'date': point['date'], 'nav': benchmark[point['date']] / benchmark_start}
+                for point in common_points
+            ]
+        benchmark_nav = benchmark_points[-1]['nav'] if benchmark_points else None
+
+        # 图表坐标在后端生成，报告无需依赖外部 JavaScript。
+        chart_series = common_points[-180:]
+        if len(chart_series) >= 2:
+            benchmark_map = {p['date']: p['nav'] for p in benchmark_points}
+            values = [p['nav'] for p in chart_series] + [benchmark_map[p['date']] for p in chart_series]
+            lo, hi = min(values), max(values)
+            span = hi - lo or 0.01
+            strategy_points = ' '.join(f"{i / (len(chart_series) - 1) * 100:.2f},{100 - (p['nav'] - lo) / span * 100:.2f}" for i, p in enumerate(chart_series))
+            benchmark_chart_points = ' '.join(f"{i / (len(chart_series) - 1) * 100:.2f},{100 - (benchmark_map[p['date']] - lo) / span * 100:.2f}" for i, p in enumerate(chart_series))
+        else:
+            strategy_points, benchmark_chart_points = '', ''
+
+        rendered_trades = []
+        for trade in sorted(trades, key=lambda t: (t['signal_date'], t['score']), reverse=True)[:100]:
+            r5 = trade['returns'].get(5)
+            rendered_trades.append({
+                **trade,
+                'strategies_text': '、'.join(trade['strategies']),
+                'entry_price_str': f"{trade['entry_price']:.2f}",
+                'ret_1': pct(trade['returns'].get(1, {}).get('net')),
+                'ret_3': pct(trade['returns'].get(3, {}).get('net')),
+                'ret_5': pct(r5.get('net')) if r5 else '-',
+                'ret_10': pct(trade['returns'].get(10, {}).get('net')),
+                'ret_20': pct(trade['returns'].get(20, {}).get('net')),
+                'exit_date': r5['exit_date'] if r5 else '-',
+                'mae': pct(r5['mae']) if r5 else '-', 'mfe': pct(r5['mfe']) if r5 else '-',
+                'drawdown': pct(r5['drawdown']) if r5 else '-',
+                'is_win': bool(r5 and r5['net'] > 0),
             })
 
-        final_stock_list.sort(key=lambda x: x['total_score'], reverse=True)
-        final_stock_list.sort(key=lambda x: x['first_date'], reverse=True)
-        
-        # 加上大于0的保护判断，防止清理数据库后历史为空导致的除0报错
-        if len(display_history) > 0:
-            print_progress(len(display_history), len(display_history), "列表生成")
-        print("")
-        
-        return summary_list, final_stock_list, matrix_dates, matrix_data
+        return {
+            'summary': summary, 'holding_summary': holding_summary, 'trades': rendered_trades,
+            'assumptions': {
+                'buy_cost': buy_cost * 100, 'sell_cost': sell_cost * 100, 'cooldown': 10,
+                'raw_signals': len(history), 'merged_signals': len(candidates), 'duplicate_skipped': skipped_duplicates,
+                'eligible_trades': len(trades),
+            },
+            'portfolio': {
+                'period': portfolio_period, 'trade_count': len(portfolio_trades), 'nav': nav,
+                'total_return': (nav - 1) * 100 if nav_points else None, 'max_drawdown': max_dd * 100 if nav_points else None,
+                'benchmark_nav': benchmark_nav,
+                'benchmark_return': (benchmark_nav - 1) * 100 if benchmark_nav is not None else None,
+                'benchmark_days': len(benchmark_points),
+                'strategy_chart_points': strategy_points, 'benchmark_chart_points': benchmark_chart_points,
+                'start_date': nav_points[0]['date'] if nav_points else '-', 'end_date': nav_points[-1]['date'] if nav_points else '-',
+            },
+        }

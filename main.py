@@ -72,7 +72,7 @@ def run_review(db, renderer):
     # 2. 构造数据
     score_data = {"total": latest["score"]}
     market_core = {
-        "sh_close": latest["sh_close"], "sh_pct": latest["sh_pct"],
+        "sh_close": latest["sh_close"], "sh_pct": latest["sh_intraday_pct"],
         "total_amount_str": f"{latest["amount"]:.0f}亿", "vol_chg_pct": latest["vol_pct"],
         "ad_ratio": latest["ad_ratio"], "up_count": latest["up_count"], "down_count": latest["down_count"],
         "limit_up_count": latest["limit_up"], "limit_down_count": latest["limit_down"]
@@ -160,13 +160,10 @@ def run_selection(db, renderer):
         webbrowser.open(f'file://{final_sel_path}')
 
     # 2. 回测
-    summary, consolidated_list, trend_dates, matrix_data = strategy_engine.run_backtest()
+    backtest = strategy_engine.run_backtest()
     bt_filename = get_backtest_path(datetime.now().strftime('%Y%m%d'))
     final_bt_path = renderer.render('back_test.html', {
-        'summary': summary,
-        'consolidated_list': consolidated_list,
-        'trend_dates': trend_dates,
-        'matrix_data': matrix_data,
+        'backtest': backtest,
         'generate_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     }, bt_filename)
 
@@ -315,6 +312,8 @@ def main():
         if latest_date:
             calc = FactorCalculator(db)
             calc.update_daily_factors(latest_date)
+            # 同步当日关键指数到 index_daily，避免指数数据只存在复盘页面内存中
+            calc.get_key_index_panel(latest_date)
             logger.info(">>> 全局因子写入完成！")
 
     elif args.mode == 'init':
@@ -328,6 +327,8 @@ def main():
         if latest_date:
             calc = FactorCalculator(db)
             calc.update_daily_factors(latest_date)
+            # 手工算分模式也同步当日关键指数，保证单独运行时数据完整
+            calc.get_key_index_panel(latest_date)
             logger.info(">>> 计算与落库完成！")
             
     elif args.mode == 'review':
